@@ -1,3 +1,9 @@
+## [1.61.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.60.0...v1.61.0) (2026-10-13)
+
+### ✨ Features
+
+* **provider:** obtain the org:admin token through workload identity federation ([#322](https://github.com/ippontech/terraform-provider-anthropic/issues/322)) ([a2455df](https://github.com/ippontech/terraform-provider-anthropic/commit/a2455df835fa17282f9e8db7943cb486e24b6fbb)), closes [#304](https://github.com/ippontech/terraform-provider-anthropic/issues/304)
+
 ## [1.60.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.59.0...v1.60.0) (2026-10-08)
 
 ### ✨ Features
