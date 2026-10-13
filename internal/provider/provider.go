@@ -10,6 +10,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -49,6 +50,7 @@ type AnthropicProviderModel struct {
 	ApiKey      types.String `tfsdk:"api_key"`
 	AdminApiKey types.String `tfsdk:"admin_api_key"`
 	AuthToken   types.String `tfsdk:"auth_token"`
+	Federation  types.Object `tfsdk:"federation"`
 }
 
 func (p *AnthropicProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -76,6 +78,7 @@ func (p *AnthropicProvider) Schema(ctx context.Context, req provider.SchemaReque
 					"such as the Workload Identity Federation admin endpoints. " +
 					"Can also be set via the ANTHROPIC_AUTH_TOKEN environment variable.",
 			},
+			"federation": federationSchema(),
 		},
 	}
 }
@@ -93,12 +96,39 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 	adminApiKey := resolveCredential(data.AdminApiKey, "ANTHROPIC_ADMIN_API_KEY")
 	authToken := resolveCredential(data.AuthToken, "ANTHROPIC_AUTH_TOKEN")
 
-	if apiKey == "" && adminApiKey == "" && authToken == "" {
+	federation, diags := resolveFederation(ctx, data.Federation)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Both would fill pd.OAuthClient, so configuring both is an error. The
+	// check reads the configuration, not the resolved string: an auth_token
+	// unknown at plan time is still set, and an exported ANTHROPIC_AUTH_TOKEN
+	// gives way to the federation block, as the environment does to every
+	// other provider argument.
+	if federation != nil {
+		if !data.AuthToken.IsNull() {
+			resp.Diagnostics.AddAttributeError(path.Root("federation"), "Conflicting OAuth Credentials",
+				"federation and auth_token both supply the org:admin bearer token. Configure one.")
+			return
+		}
+		// The SDKs give ANTHROPIC_AUTH_TOKEN precedence over their own
+		// federation, so an operator used to them would expect the reverse.
+		if authToken != "" {
+			resp.Diagnostics.AddAttributeWarning(path.Root("federation"), "ANTHROPIC_AUTH_TOKEN Ignored",
+				"ANTHROPIC_AUTH_TOKEN is set, but the federation block supplies the org:admin bearer token, so the variable is not used. "+
+					"Unset it to silence this warning.")
+			authToken = ""
+		}
+	}
+
+	if apiKey == "" && adminApiKey == "" && authToken == "" && federation == nil {
 		resp.Diagnostics.AddError(
 			"Missing Credentials",
 			"At least one credential must be configured: api_key (ANTHROPIC_API_KEY) for standard resources, "+
 				"admin_api_key (ANTHROPIC_ADMIN_API_KEY) for organization management resources, "+
-				"or auth_token (ANTHROPIC_AUTH_TOKEN) for endpoints that require an org:admin OAuth bearer token.",
+				"or auth_token (ANTHROPIC_AUTH_TOKEN) or a federation block for endpoints that require an org:admin OAuth bearer token.",
 		)
 		return
 	}
@@ -114,6 +144,13 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 	}
 	if authToken != "" {
 		pd.OAuthClient = &providerdata.OAuthClient{Client: newSDKClient(option.WithAuthToken(authToken))}
+	}
+	if federation != nil {
+		// The SDK caches the exchanged token and exchanges again shortly
+		// before it expires, calling the identity source each time.
+		pd.OAuthClient = &providerdata.OAuthClient{Client: newSDKClient(
+			option.WithFederationTokenProvider(federation.identity, federation.options),
+		)}
 	}
 
 	resp.DataSourceData = pd

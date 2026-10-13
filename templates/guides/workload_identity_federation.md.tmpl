@@ -38,30 +38,34 @@ provider "anthropic" {
 
 Three things to know about this token:
 
-- **It is short-lived.** A long `terraform apply` can outlive it and start failing with `401`. Re-run the `export` line immediately before every run (the CLI refreshes the token on export); the provider does not refresh it.
-- **The provider does not perform the WIF token exchange itself.** The SDK federation variables (`ANTHROPIC_FEDERATION_RULE_ID` and friends, see [section 4](#4-how-the-workload-consumes-the-rule)) do not configure the provider: with no `auth_token`, configuration fails with `Missing Credentials`. In CI, a preceding step has to exchange the identity token for the bearer and export it, see below.
+- **It is short-lived.** A long `terraform apply` can outlive it and start failing with `401`. Re-run the `export` line immediately before every run (the CLI refreshes the token on export); the provider cannot refresh a token it was handed.
+- **A workload doesn't need it.** Once the bootstrap rule exists, the provider's `federation` block exchanges the workload's own identity token and refreshes the result, see below.
 - **`ant auth login --profile admin` also makes that profile active for the CLI.** The provider ignores profiles (every client is built from the resolved credential and nothing else), but the `ant` CLI and SDKs in the same shell do not. Switch back with `ant profile activate default` and unset the variable when you are done.
 
-### Minting the token in CI
+### Letting the provider mint the token in CI
 
-Once the bootstrap rule of [section 2](#2-the-once-per-organization-bootstrap) exists, a pipeline mints its own `org:admin` bearer from the platform's identity token with the [jwt-bearer grant](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation#authenticate-from-your-workload), then hands it to the provider through `ANTHROPIC_AUTH_TOKEN`. On GitHub Actions (with `permissions: id-token: write` on the job):
+Once the bootstrap rule of [section 2](#2-the-once-per-organization-bootstrap) exists, a pipeline needs no token step: give the provider the rule and a way to fetch the platform's identity token, and it performs the [jwt-bearer exchange](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation#authenticate-from-your-workload) itself. It exchanges again before the access token expires, fetching a fresh identity token each time, so an apply longer than `token_lifetime_seconds` keeps working. On GitHub Actions (with `permissions: id-token: write` on the job):
 
-```yaml
-- name: Mint an org:admin token through WIF
-  run: |
-    JWT=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-      "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r .value)
-    TOKEN=$(curl --fail-with-body -sS https://api.anthropic.com/v1/oauth/token \
-      -H "content-type: application/json" \
-      -d "$(jq -n --arg jwt "$JWT" '{grant_type:"urn:ietf:params:oauth:grant-type:jwt-bearer",assertion:$jwt,federation_rule_id:"fdrl_...",organization_id:"00000000-0000-0000-0000-000000000000",service_account_id:"svac_..."}')" \
-      | jq -er .access_token)
-    echo "::add-mask::$TOKEN"
-    echo "ANTHROPIC_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-
-- run: terraform plan
+```hcl
+provider "anthropic" {
+  federation = {
+    organization_id    = "00000000-0000-0000-0000-000000000000"
+    federation_rule_id = "fdrl_..."
+    service_account_id = "svac_..."
+    # The exchange accepts a token with a jti claim, as GitHub's are, only
+    # once, so one is requested per exchange.
+    # The command is run without a shell; this one needs a pipe and the
+    # runner's variables, so it names sh as the program. --max-time keeps a
+    # stalled request from outliving the provider's 30-second stop.
+    identity_token_command = [
+      "sh", "-c",
+      "curl -sSf --max-time 20 -H \"Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN\" \"$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com\" | jq -r .value",
+    ]
+  }
+}
 ```
 
-The three IDs are those of the bootstrap rule, your organization and the rule's target service account. The same exchange works from any platform that issues OIDC tokens (on GitLab CI it goes in `before_script`, with the token requested through `id_tokens`, see [section 4](#4-how-the-workload-consumes-the-rule)). The minted token lives `token_lifetime_seconds` at most, so mint it in the job that runs Terraform, not in an earlier one.
+The three IDs are those of the bootstrap rule, your organization and the rule's target service account; they can also come from `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_FEDERATION_RULE_ID` and `ANTHROPIC_SERVICE_ACCOUNT_ID`, with `federation = {}` in the configuration. Other platforms only change the identity token source: `identity_token_file` for a token the platform writes to disk (a Kubernetes projected service account token), or a command that prints one (`az account get-access-token --resource <app-client-id> --query accessToken -o tsv` for an Entra application, `gcloud auth print-identity-token --audiences=...` on Google Cloud).
 
 ## 2. The once-per-organization bootstrap
 
@@ -124,7 +128,7 @@ The consequence for Terraform is a single manual step per organization:
 
    Apply, then run `terraform plan` and adjust the configuration until it is empty: with `oauth_scope = "org:admin"` a non-empty plan cannot be applied, it only means the declaration does not match the Console. [Section 5](#5-importing-console-created-objects) lists the two wizard details that usually need reconciling (`workspace_id` and an unset `match.audience`). Drop the `import` blocks once the state holds both objects.
 
-4. Everything else, including every workspace-scoped rule, can now be created from Terraform, either by a human running `terraform apply` with the token from section 1, or by that bootstrapped workload once it exchanges its identity token ([Minting the token in CI](#minting-the-token-in-ci)).
+4. Everything else, including every workspace-scoped rule, can now be created from Terraform, either by a human running `terraform apply` with the token from section 1, or by that bootstrapped workload through the provider's `federation` block ([Letting the provider mint the token in CI](#letting-the-provider-mint-the-token-in-ci)).
 
 ~> **Warning**: Match the bootstrap rule to one exact workload identity, never a broad pattern. `subject_prefix` is an exact match unless the value ends in `*`. For GitHub Actions, pin it to a protected branch such as `repo:my-org/my-repo:ref:refs/heads/main`. A trailing wildcard such as `repo:my-org/my-repo:*` also matches `pull_request` runs, including runs from forks, so anyone able to open a pull request could mint an `org:admin` token.
 
@@ -377,8 +381,8 @@ After importing, run `terraform plan` and reconcile until it is empty. The Conso
 - **Names are unique per organization** for each object type, must match `^[a-z0-9-]+$` and be 1 to 255 characters. A duplicate returns `409`. **`issuer_url` is unique too**: the API rejects a second issuer for a URL the organization already trusts, so one issuer per identity provider, shared by all the rules that trust it (including the Console-created bootstrap rule, see section 2). A service account's `name` is immutable and forces replacement; an issuer's and a rule's can be renamed in place.
 - **Scopes an OAuth caller may grant.** `workspace:developer` and `workspace:inference` only. `org:admin` and `workspace:manage_tunnels` rules are Console-only, and an issuer backing one of them cannot be updated by the provider either. A rule granting `org:admin` must also target a service account whose `organization_role` is `admin`.
 - **Never use a wildcard subject for a privileged rule.** See the warning in section 2; for workspace-scoped rules, prefer an exact `subject_prefix` plus `claims` matches (`repository_owner`, `ref`) over a trailing `*`; if the trailing `*` is unavoidable, pin `ref` in `claims` so pull-request runs from forks never match.
-- **Token lifetimes.** `max_jwt_lifetime_seconds` on the issuer bounds the identity token you accept; `token_lifetime_seconds` on the rule bounds the access token you mint, itself capped at twice the identity token's remaining validity. Keep both short for CI.
-- **The `org:admin` token used by Terraform expires**, so a plan or apply that runs for a long time may need a fresh export in between. Mint it as late as possible and avoid combining WIF changes with slow resources in the same run.
+- **Token lifetimes.** `max_jwt_lifetime_seconds` on the issuer bounds the identity token you accept; `token_lifetime_seconds` on the rule bounds the access token you mint, itself capped at twice the identity token's remaining validity. Keep both short for CI, but keep `token_lifetime_seconds` well above 120: the SDK refreshes within the last 120 seconds of a token's life, so a shorter one refreshes, and fetches an identity token, on nearly every request.
+- **An `auth_token` expires and is never refreshed**, so a plan or apply that runs for a long time may need a fresh export in between: mint it as late as possible and avoid combining WIF changes with slow resources in the same run. The `federation` block has no such limit, since the provider exchanges again before the token expires (see "Letting the provider mint the token in CI" in section 1).
 
 ## See also
 
