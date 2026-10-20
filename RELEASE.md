@@ -119,7 +119,7 @@ This allows the App to push directly to `main` without going through the PR/merg
 
 Because the App bypasses the ruleset, whoever holds its token can push a commit and a `v*.*.*` tag to `main`, which `goreleaser-release.yml` builds and signs as a Registry release. `.github/workflows/semantic-release.yml` therefore limits who can see it:
 
-- semantic-release and its plugins are installed with `npm ci --ignore-scripts` from `.github/semantic-release/package-lock.json`, so the whole dependency tree is fixed and integrity-checked, and no package install script runs. Bump them through that `package.json` (Renovate's `npm` manager updates the lockfile with it), never with an inline `npm install <pkg>@<version>` in the workflow, which pins only the top-level packages.
+- semantic-release and its plugins are installed with `npm ci --ignore-scripts` from `.github/semantic-release/package-lock.json`, so the whole dependency tree is fixed and integrity-checked, and no package install script runs. Bump them through that `package.json` (Renovate's `npm` manager updates the lockfile with it), never with an inline `npm install <pkg>@<version>` in the workflow, which pins only the top-level packages. Renovate's PR is not automerged: review the `package-lock.json` diff, since a bump can change transitive versions too.
 - The checkout uses `persist-credentials: false` and the read-only job token, so no credential is written to `.git/config`.
 - The App token is minted after the install, narrowed to the three permissions above, and passed only to the semantic-release step as `GITHUB_TOKEN`; semantic-release builds its authenticated push URL from it.
 

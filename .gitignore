@@ -81,6 +81,7 @@ coverage/
 node_modules/
 .pnp.*
 package-lock.json # Optional: some teams commit this, others don't.
+!.github/semantic-release/package-lock.json
 # Frameworks
 .next/ # Next.js
 .nuxt/ # Nuxt.js

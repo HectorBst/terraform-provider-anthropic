@@ -47,7 +47,8 @@
       "description": "semantic-release and its plugins, pinned in .github/semantic-release/package.json and locked by its package-lock.json",
       "matchManagers": ["npm"],
       "groupName": "semantic-release",
-      "groupSlug": "semantic-release"
+      "groupSlug": "semantic-release",
+      "semanticCommitType": "chore"
     },
     {
       "matchManagers": ["pre-commit"],
@@ -68,6 +69,11 @@
       "description": "tflint is installed from a pinned release zip whose sha256 is hardcoded next to the version (security.yml); Renovate can bump the version but not the hash, so its PR always fails the tflint job until TFLINT_SHA256 is updated by hand. Never automerge it (#241 was merged with the job red).",
       "matchManagers": ["custom.regex"],
       "matchDepNames": ["terraform-linters/tflint"],
+      "automerge": false
+    },
+    {
+      "description": "semantic-release runs with the release App token, a bypass actor on main. A bump regenerates package-lock.json and can pull in new transitive versions, so a person reviews the lockfile diff before it merges.",
+      "matchManagers": ["npm"],
       "automerge": false
     },
     {

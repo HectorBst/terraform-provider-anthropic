@@ -85,7 +85,10 @@ The manager's updates are grouped into a single `CI tool versions` PR.
 semantic-release and its plugins no longer need a custom manager: they are pinned in
 `.github/semantic-release/package.json` and locked, transitive dependencies included, by the
 `package-lock.json` next to it, which the release workflow installs with `npm ci --ignore-scripts`. The
-built-in `npm` manager bumps both files together, in a single `semantic-release` PR. An inline
+built-in `npm` manager bumps both files together, in a single `semantic-release` PR typed `chore(deps)`
+(`config:recommended` would type a `dependencies` bump `fix(deps)`, which `.releaserc` turns into a provider
+release). That PR is never automerged: Renovate regenerates the lockfile, which can bring in new
+transitive versions, and the lock only protects the release job if someone reviews that diff. An inline
 `npm install <pkg>@<version>` (the previous setup) pinned only the top-level packages and resolved the
 rest of the tree at run time, inside a job that holds the release App token.
 
