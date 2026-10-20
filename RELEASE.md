@@ -115,6 +115,14 @@ This allows the App to push directly to `main` without going through the PR/merg
 5. Set the bypass mode to **Always**
 6. Save
 
+## Keep the App token away from third-party code
+
+Because the App bypasses the ruleset, whoever holds its token can push a commit and a `v*.*.*` tag to `main`, which `goreleaser-release.yml` builds and signs as a Registry release. `.github/workflows/semantic-release.yml` therefore limits who can see it:
+
+- semantic-release and its plugins are installed with `npm ci --ignore-scripts` from `.github/semantic-release/package-lock.json`, so the whole dependency tree is fixed and integrity-checked, and no package install script runs. Bump them through that `package.json` (Renovate's `npm` manager updates the lockfile with it), never with an inline `npm install <pkg>@<version>` in the workflow, which pins only the top-level packages.
+- The checkout uses `persist-credentials: false` and the read-only job token, so no credential is written to `.git/config`.
+- The App token is minted after the install, narrowed to the three permissions above, and passed only to the semantic-release step as `GITHUB_TOKEN`; semantic-release builds its authenticated push URL from it.
+
 # Major versions
 
 Breaking changes are batched into a single major release, at most once a year, as HashiCorp recommends ([provider versioning best practices](https://developer.hashicorp.com/terraform/plugin/best-practices/versioning)). Between two majors, breaking changes accumulate on a long-lived staging branch, the way the Google provider stages them on `FEATURE-BRANCH-major-release-X.0.0` ([Magic Modules: make a breaking change](https://googlecloudplatform.github.io/magic-modules/breaking-changes/make-a-breaking-change/)). The staging branch never releases anything: semantic-release only runs on `main` (see `.github/workflows/semantic-release.yml`) and `.releaserc` pins `branches` to `["main"]`, so no branch name can accidentally match one of semantic-release's default release branches (`next`, `next-major`, `beta`, `alpha`, `N.x`).

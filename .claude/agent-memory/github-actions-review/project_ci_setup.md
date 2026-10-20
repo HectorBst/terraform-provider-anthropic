@@ -20,7 +20,7 @@ Key intentional design decisions:
 - `acctest` GitHub Environment acts as the secret gate for ANTHROPIC_API_KEY
 - `make install` is called inside `make build` chain; no standalone install CI job — intentional (local dev only)
 - `terraform-test` (make terraform-test) IS covered by testacc.yml
-- semantic-release uses pinned npm package versions in the install command (not @latest)
+- semantic-release and its plugins are installed with `npm ci --ignore-scripts` from `.github/semantic-release/package-lock.json` (whole tree locked, no install scripts); never go back to an inline `npm install <pkg>@<version>`, which pins only the top level
 - All actions/checkout and actions/setup-go references are pinned to full SHA
 - Workflow-level `permissions: {}` is set on every workflow — good baseline
 
@@ -38,6 +38,6 @@ Harden-runner status (updated April 2026):
 
 Known security finding (as of April 2026 audit):
 - `goreleaser-release.yml` job has `contents: write` but no `id-token: write` — acceptable, only needs to publish release artifacts
-- `semantic-release.yml` job has `contents: write`, `issues: write`, `pull-requests: write` — intentional, semantic-release needs all three to create releases, update changelogs, and comment on PRs/issues
+- `semantic-release.yml` job token is `contents: read` (checkout only, `persist-credentials: false`); all writes use the GitHub App token, minted after the npm install with `permission-contents/issues/pull-requests: write` and passed only to the semantic-release step as `GITHUB_TOKEN`. The App bypasses the `main` ruleset, so keep it off disk and out of the install step
 - `goreleaser-snapshot.yml` passes GITHUB_TOKEN env var to goreleaser snapshot — goreleaser only needs it to read repo metadata for snapshot; low risk but could be tightened
 - `semantic-release.yml` uses `actions/setup-node` rather than calling `make` — no Makefile target exists for semantic-release (it's a JS tool), so this is not drift

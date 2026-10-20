@@ -12,6 +12,7 @@
     "github-actions",
     "gomod",
     "mise",
+    "npm",
     "pre-commit",
     "custom.regex"
   ],
@@ -23,16 +24,6 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s+\\S+: [\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
       ]
-    },
-    {
-      "customType": "regex",
-      "description": "npm packages installed inline by the semantic-release workflow; there is no package.json for the npm manager to key off",
-      "managerFilePatterns": [".github/workflows/semantic-release.yml"],
-      "matchStrings": [
-        "(?<depName>(?:@[a-z0-9-]+/)?[a-z0-9][a-z0-9-._]*)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
-      ],
-      "datasourceTemplate": "npm",
-      "versioningTemplate": "npm"
     }
   ],
   "packageRules": [
@@ -51,6 +42,12 @@
       "matchManagers": ["mise"],
       "groupName": "mise tools",
       "groupSlug": "mise-tools"
+    },
+    {
+      "description": "semantic-release and its plugins, pinned in .github/semantic-release/package.json and locked by its package-lock.json",
+      "matchManagers": ["npm"],
+      "groupName": "semantic-release",
+      "groupSlug": "semantic-release"
     },
     {
       "matchManagers": ["pre-commit"],
@@ -81,7 +78,7 @@
     },
     {
       "description": "Hold conventional-changelog-conventionalcommits below 9: 10.x needs conventional-changelog-writer@9, but the latest stable @semantic-release/release-notes-generator (14.1.1) pins writer ^8, so generateNotes fails with 'Missing helper'. Lift once release-notes-generator 15 ships with writer 9.",
-      "matchManagers": ["custom.regex"],
+      "matchManagers": ["npm"],
       "matchDepNames": ["conventional-changelog-conventionalcommits"],
       "allowedVersions": "<9.0.0"
     }
