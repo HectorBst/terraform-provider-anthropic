@@ -11,16 +11,19 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/ippontech/terraform-provider-anthropic/internal/admin"
+	"github.com/ippontech/terraform-provider-anthropic/internal/admintest"
+	"github.com/ippontech/terraform-provider-anthropic/internal/schematest"
 )
 
 func newTestAdminClient(t *testing.T, srv *httptest.Server) *admin.Client {
 	t.Helper()
-	return &admin.Client{
-		ApiKey:     "test-key",
-		BaseURL:    srv.URL,
-		HTTPClient: srv.Client(),
-	}
+	return admintest.NewClient(t, srv)
 }
 
 func apiKeyFixture(workspaceID *string) string {
@@ -33,11 +36,28 @@ func apiKeyFixture(workspaceID *string) string {
 		"name": "My API Key",
 		"status": "active",
 		"workspace_id": ` + wsID + `,
+		"scope": {"type": "workspace", "workspace_id": "wrkspc_01WS"},
+		"principal": {"type": "user_actor", "user_id": "user_01XYZ"},
+		"expires_at": null,
 		"created_at": "2026-01-01T00:00:00Z",
 		"created_by": {"id": "user_01XYZ", "type": "user"},
 		"partial_key_hint": "abcd",
 		"type": "api_key"
 	}`
+}
+
+// objectString returns the string attribute name of obj, failing the test if
+// obj is null or the attribute is not a types.String.
+func objectString(t *testing.T, obj types.Object, name string) types.String {
+	t.Helper()
+	if obj.IsNull() || obj.IsUnknown() {
+		t.Fatalf("object is null or unknown, want attribute %q", name)
+	}
+	v, ok := obj.Attributes()[name].(types.String)
+	if !ok {
+		t.Fatalf("attribute %q is %T, want types.String", name, obj.Attributes()[name])
+	}
+	return v
 }
 
 func TestAPIKeyRead_parsesResponse(t *testing.T) {
@@ -168,7 +188,7 @@ func TestMapAPIKeyToState_setsAllFields(t *testing.T) {
 		Status:         "active",
 		WorkspaceID:    &wsID,
 		CreatedAt:      "2026-01-01T00:00:00Z",
-		CreatedBy:      apiKeyCreatedBy{ID: "user_01XYZ", Type: "user"},
+		CreatedBy:      &apiKeyCreatedBy{ID: "user_01XYZ", Type: "user"},
 		PartialKeyHint: "abcd",
 		Type:           "api_key",
 	}
@@ -209,7 +229,7 @@ func TestMapAPIKeyToState_nullWorkspaceID(t *testing.T) {
 		Status:         "active",
 		WorkspaceID:    nil,
 		CreatedAt:      "2026-01-01T00:00:00Z",
-		CreatedBy:      apiKeyCreatedBy{ID: "user_01XYZ", Type: "user"},
+		CreatedBy:      &apiKeyCreatedBy{ID: "user_01XYZ", Type: "user"},
 		PartialKeyHint: "abcd",
 		Type:           "api_key",
 	}
@@ -222,5 +242,240 @@ func TestMapAPIKeyToState_nullWorkspaceID(t *testing.T) {
 
 	if !data.WorkspaceID.IsNull() {
 		t.Errorf("WorkspaceID should be null, got %q", data.WorkspaceID.ValueString())
+	}
+}
+
+// The Default Workspace case: workspace_id is null, scope carries the real ID.
+func TestMapAPIKeyToState_workspaceScopeUserPrincipalExpiry(t *testing.T) {
+	body := `{
+		"id": "apikey_01ABC",
+		"name": "Default WS key",
+		"status": "expired",
+		"workspace_id": null,
+		"scope": {"type": "workspace", "workspace_id": "wrkspc_01DEFAULT"},
+		"principal": {"type": "user_actor", "user_id": "user_01XYZ"},
+		"expires_at": "2026-10-01T00:00:00Z",
+		"created_at": "2026-01-01T00:00:00Z",
+		"created_by": {"id": "user_01XYZ", "type": "user"},
+		"partial_key_hint": "sk-ant-api03-R2D...igAA",
+		"type": "api_key"
+	}`
+	var key apiKeyAPIResponse
+	if err := json.Unmarshal([]byte(body), &key); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	var data APIKeyResourceModel
+	if diags := mapAPIKeyToState(context.Background(), &key, &data); diags.HasError() {
+		t.Fatalf("mapAPIKeyToState error: %v", diags)
+	}
+
+	if !data.WorkspaceID.IsNull() {
+		t.Errorf("WorkspaceID = %q, want null", data.WorkspaceID.ValueString())
+	}
+	if got := objectString(t, data.Scope, "type").ValueString(); got != "workspace" {
+		t.Errorf("scope.type = %q, want workspace", got)
+	}
+	if got := objectString(t, data.Scope, "workspace_id").ValueString(); got != "wrkspc_01DEFAULT" {
+		t.Errorf("scope.workspace_id = %q, want wrkspc_01DEFAULT", got)
+	}
+	if got := objectString(t, data.Principal, "type").ValueString(); got != "user_actor" {
+		t.Errorf("principal.type = %q, want user_actor", got)
+	}
+	if got := objectString(t, data.Principal, "user_id").ValueString(); got != "user_01XYZ" {
+		t.Errorf("principal.user_id = %q, want user_01XYZ", got)
+	}
+	if got := objectString(t, data.Principal, "service_account_id"); !got.IsNull() {
+		t.Errorf("principal.service_account_id = %v, want null", got)
+	}
+	if got := data.ExpiresAt.ValueString(); got != "2026-10-01T00:00:00Z" {
+		t.Errorf("ExpiresAt = %q, want 2026-10-01T00:00:00Z", got)
+	}
+	if got := data.Status.ValueString(); got != "expired" {
+		t.Errorf("Status = %q, want expired", got)
+	}
+}
+
+func TestMapAPIKeyToState_organizationScopeServiceAccountPrincipal(t *testing.T) {
+	body := `{
+		"id": "apikey_01ORG",
+		"name": "Org key",
+		"status": "active",
+		"workspace_id": null,
+		"scope": {"type": "organization"},
+		"principal": {"type": "service_account_actor", "service_account_id": "svac_01ABC"},
+		"expires_at": null,
+		"created_at": "2026-01-01T00:00:00Z",
+		"created_by": {"id": "svac_01ABC", "type": "service_account"},
+		"partial_key_hint": "abcd",
+		"type": "api_key"
+	}`
+	var key apiKeyAPIResponse
+	if err := json.Unmarshal([]byte(body), &key); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	var data APIKeyResourceModel
+	if diags := mapAPIKeyToState(context.Background(), &key, &data); diags.HasError() {
+		t.Fatalf("mapAPIKeyToState error: %v", diags)
+	}
+
+	if got := objectString(t, data.Scope, "type").ValueString(); got != "organization" {
+		t.Errorf("scope.type = %q, want organization", got)
+	}
+	if got := objectString(t, data.Scope, "workspace_id"); !got.IsNull() {
+		t.Errorf("scope.workspace_id = %v, want null", got)
+	}
+	if got := objectString(t, data.Principal, "type").ValueString(); got != "service_account_actor" {
+		t.Errorf("principal.type = %q, want service_account_actor", got)
+	}
+	if got := objectString(t, data.Principal, "service_account_id").ValueString(); got != "svac_01ABC" {
+		t.Errorf("principal.service_account_id = %q, want svac_01ABC", got)
+	}
+	if got := objectString(t, data.Principal, "user_id"); !got.IsNull() {
+		t.Errorf("principal.user_id = %v, want null", got)
+	}
+	if !data.ExpiresAt.IsNull() {
+		t.Errorf("ExpiresAt = %q, want null", data.ExpiresAt.ValueString())
+	}
+	if got := objectString(t, data.CreatedBy, "type").ValueString(); got != "service_account" {
+		t.Errorf("created_by.type = %q, want service_account", got)
+	}
+}
+
+// A legacy key: no principal, no recorded creator, no hint. Every one of them
+// must map to null, never to an object or a string that is empty.
+func TestMapAPIKeyToState_nullableFieldsMapToNull(t *testing.T) {
+	body := `{
+		"id": "apikey_01LEGACY",
+		"name": "Legacy key",
+		"status": "active",
+		"workspace_id": "wrkspc_01WS",
+		"scope": {"type": "workspace", "workspace_id": "wrkspc_01WS"},
+		"principal": null,
+		"expires_at": null,
+		"created_at": "2024-01-01T00:00:00Z",
+		"created_by": null,
+		"partial_key_hint": null,
+		"type": "api_key"
+	}`
+	var key apiKeyAPIResponse
+	if err := json.Unmarshal([]byte(body), &key); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	var data APIKeyResourceModel
+	if diags := mapAPIKeyToState(context.Background(), &key, &data); diags.HasError() {
+		t.Fatalf("mapAPIKeyToState error: %v", diags)
+	}
+
+	if !data.Principal.IsNull() {
+		t.Errorf("Principal = %v, want null", data.Principal)
+	}
+	if !data.CreatedBy.IsNull() {
+		t.Errorf("CreatedBy = %v, want null", data.CreatedBy)
+	}
+	if !data.PartialKeyHint.IsNull() {
+		t.Errorf("PartialKeyHint = %q, want null", data.PartialKeyHint.ValueString())
+	}
+	if !data.ExpiresAt.IsNull() {
+		t.Errorf("ExpiresAt = %q, want null", data.ExpiresAt.ValueString())
+	}
+	if got := data.WorkspaceID.ValueString(); got != "wrkspc_01WS" {
+		t.Errorf("WorkspaceID = %q, want wrkspc_01WS", got)
+	}
+}
+
+// Read drives the resource end to end: an expired key keeps its read-only
+// status in state, and the new attributes are populated.
+func TestAPIKeyResource_ReadExpiredKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/organizations/api_keys/apikey_01ABC" {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id": "apikey_01ABC", "name": "Expired", "status": "expired", "workspace_id": "wrkspc_01WS",
+			"scope": {"type": "workspace", "workspace_id": "wrkspc_01WS"},
+			"principal": {"type": "user_actor", "user_id": "user_01XYZ"},
+			"expires_at": "2026-10-01T00:00:00Z", "created_at": "2026-01-01T00:00:00Z",
+			"created_by": {"id": "user_01XYZ", "type": "user"}, "partial_key_hint": "abcd", "type": "api_key"
+		}`)
+	}))
+	defer srv.Close()
+
+	r := &APIKeyResource{adminClient: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+	objType := schematest.ResourceObjectType(t, r)
+	vals := schematest.NullValues(t, r)
+	vals["id"] = tftypes.NewValue(tftypes.String, "apikey_01ABC")
+	state := tfsdk.State{Raw: tftypes.NewValue(objType, vals), Schema: s}
+
+	resp := resource.ReadResponse{State: tfsdk.State{Schema: s}}
+	r.Read(context.Background(), resource.ReadRequest{State: state}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned errors: %v", resp.Diagnostics)
+	}
+
+	var data APIKeyResourceModel
+	if diags := resp.State.Get(context.Background(), &data); diags.HasError() {
+		t.Fatalf("state: %v", diags)
+	}
+	if got := data.Status.ValueString(); got != "expired" {
+		t.Errorf("status = %q, want expired", got)
+	}
+	if got := data.ExpiresAt.ValueString(); got != "2026-10-01T00:00:00Z" {
+		t.Errorf("expires_at = %q, want 2026-10-01T00:00:00Z", got)
+	}
+	if got := objectString(t, data.Scope, "workspace_id").ValueString(); got != "wrkspc_01WS" {
+		t.Errorf("scope.workspace_id = %q, want wrkspc_01WS", got)
+	}
+}
+
+// expired is read-only: the API sets it, and POST /v1/organizations/api_keys/{id}
+// accepts only active, archived and inactive.
+func TestAPIKeyResource_statusValidator(t *testing.T) {
+	r := &APIKeyResource{}
+	s := schematest.ResourceSchema(t, r)
+	attrSchema, ok := s.Attributes["status"].(interface{ StringValidators() []validator.String })
+	if !ok {
+		t.Fatal("status attribute has no string validators")
+	}
+
+	for value, wantErr := range map[string]bool{
+		"active":   false,
+		"inactive": false,
+		"archived": false,
+		"expired":  true,
+		"deleted":  true,
+	} {
+		var resp validator.StringResponse
+		for _, v := range attrSchema.StringValidators() {
+			v.ValidateString(context.Background(), validator.StringRequest{ConfigValue: types.StringValue(value)}, &resp)
+		}
+		if got := resp.Diagnostics.HasError(); got != wantErr {
+			t.Errorf("status %q: error = %v, want %v", value, got, wantErr)
+		}
+	}
+}
+
+// apiKeyListItemAttrTypes must stay identical to the resource schema, because
+// mapAPIKeyToListObject converts an APIKeyResourceModel with
+// types.ObjectValueFrom.
+func TestAPIKeyListItemAttrTypes_matchResourceSchema(t *testing.T) {
+	objType := schematest.ResourceObjectType(t, &APIKeyResource{})
+	if len(objType.AttributeTypes) != len(apiKeyListItemAttrTypes) {
+		t.Fatalf("resource has %d attributes, list item has %d", len(objType.AttributeTypes), len(apiKeyListItemAttrTypes))
+	}
+	for name, want := range apiKeyListItemAttrTypes {
+		got, ok := objType.AttributeTypes[name]
+		if !ok {
+			t.Errorf("list item attribute %q missing from the resource schema", name)
+			continue
+		}
+		if !got.Equal(want.TerraformType(context.Background())) {
+			t.Errorf("attribute %q: resource type %v, list item type %v", name, got, want)
+		}
 	}
 }
