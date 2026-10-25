@@ -1090,80 +1090,123 @@ func mapAgentResponseToState(ctx context.Context, agent *anthropic.BetaManagedAg
 	return diags
 }
 
-// mapAgentToolsetToState maps the API agent toolset response to a Terraform object,
-// filtering per-tool configs to only those tracked in the current state.
+// apiToolConfig is the response-side shape shared by built-in and MCP per-tool
+// configs, so a single mapping serves both toolset kinds.
+type apiToolConfig struct {
+	name             string
+	enabled          bool
+	permissionPolicy string
+}
+
+// mapToolConfigsToState maps a toolset's per-tool configs from the API into
+// state. Every config the API returns is represented, so an override added out
+// of band (a config for another tool, or a policy relaxed to `always_allow`)
+// surfaces as a plan diff and is reverted on apply instead of being dropped:
+//   - configs tracked in current come first, in their order; a tracked config
+//     the API no longer returns is omitted, so it is re-created on apply;
+//   - configs the API returns for any other tool are appended in API order;
+//   - a field the configuration left unset stays null only while the API value
+//     equals the toolset default it inherits (the docs: per-tool configs
+//     override `default_config`), so an echoed default causes no perpetual diff
+//     and a diverging value does.
+//
+// A null current (no configs block, or import) maps every API config verbatim.
+func mapToolConfigsToState(ctx context.Context, current types.List, apiConfigs []apiToolConfig, defaultEnabled bool, defaultPolicy string, attrTypes map[string]attr.Type) (types.List, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	elemType := types.ObjectType{AttrTypes: attrTypes}
+
+	var stateConfigs []agentToolConfigModel
+	if !current.IsNull() && !current.IsUnknown() {
+		diags.Append(current.ElementsAs(ctx, &stateConfigs, false)...)
+		if diags.HasError() {
+			return types.ListNull(elemType), diags
+		}
+	} else if len(apiConfigs) == 0 {
+		return types.ListNull(elemType), diags
+	}
+
+	apiByName := make(map[string]apiToolConfig, len(apiConfigs))
+	for _, c := range apiConfigs {
+		apiByName[c.name] = c
+	}
+
+	configObjs := make([]attr.Value, 0, len(apiConfigs))
+	tracked := make(map[string]bool, len(stateConfigs))
+	for _, sc := range stateConfigs {
+		name := sc.Name.ValueString()
+		tracked[name] = true
+		apiCfg, ok := apiByName[name]
+		if !ok {
+			continue
+		}
+		enabled := types.BoolValue(apiCfg.enabled)
+		if sc.Enabled.IsNull() && apiCfg.enabled == defaultEnabled {
+			enabled = types.BoolNull()
+		}
+		permPolicy := types.StringValue(apiCfg.permissionPolicy)
+		if sc.PermissionPolicy.IsNull() && apiCfg.permissionPolicy == defaultPolicy {
+			permPolicy = types.StringNull()
+		}
+		obj, d := types.ObjectValue(attrTypes, map[string]attr.Value{
+			"name":              types.StringValue(name),
+			"enabled":           enabled,
+			"permission_policy": permPolicy,
+		})
+		diags.Append(d...)
+		configObjs = append(configObjs, obj)
+	}
+
+	for _, c := range apiConfigs {
+		if tracked[c.name] {
+			continue
+		}
+		tracked[c.name] = true
+		obj, d := types.ObjectValue(attrTypes, map[string]attr.Value{
+			"name":              types.StringValue(c.name),
+			"enabled":           types.BoolValue(c.enabled),
+			"permission_policy": types.StringValue(c.permissionPolicy),
+		})
+		diags.Append(d...)
+		configObjs = append(configObjs, obj)
+	}
+
+	list, d := types.ListValue(elemType, configObjs)
+	diags.Append(d...)
+	return list, diags
+}
+
+// mapAgentToolsetToState maps the API agent toolset response to a Terraform object.
+// Per-tool configs go through mapToolConfigsToState, so out-of-band overrides show up.
 func mapAgentToolsetToState(ctx context.Context, apiToolset *anthropic.BetaManagedAgentsAgentToolset20260401, currentState types.Object) (types.Object, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	defaultEnabled := types.BoolValue(apiToolset.DefaultConfig.Enabled)
 	defaultPermPolicy := types.StringValue(apiToolset.DefaultConfig.PermissionPolicy.Type)
 
-	// Determine which configs to include in state.
-	configsList := types.ListNull(types.ObjectType{AttrTypes: agentToolConfigAttrTypes})
-
+	currentConfigs := types.ListNull(types.ObjectType{AttrTypes: agentToolConfigAttrTypes})
 	if !currentState.IsNull() && !currentState.IsUnknown() {
 		var stateToolset agentToolsetModel
 		diags.Append(currentState.As(ctx, &stateToolset, basetypes.ObjectAsOptions{})...)
 		if diags.HasError() {
 			return types.ObjectNull(agentToolsetAttrTypes), diags
 		}
+		currentConfigs = stateToolset.Configs
+	}
 
-		if !stateToolset.Configs.IsNull() {
-			var stateConfigs []agentToolConfigModel
-			diags.Append(stateToolset.Configs.ElementsAs(ctx, &stateConfigs, false)...)
-			if diags.HasError() {
-				return types.ObjectNull(agentToolsetAttrTypes), diags
-			}
+	apiConfigs := make([]apiToolConfig, 0, len(apiToolset.Configs))
+	for _, c := range apiToolset.Configs {
+		apiConfigs = append(apiConfigs, apiToolConfig{
+			name:             string(c.Name),
+			enabled:          c.Enabled,
+			permissionPolicy: c.PermissionPolicy.Type,
+		})
+	}
 
-			// Build lookup from API response.
-			apiByName := map[string]anthropic.BetaManagedAgentsAgentToolConfigUnion{}
-			for _, c := range apiToolset.Configs {
-				apiByName[string(c.Name)] = c
-			}
-
-			// Keep only configs matching state names, in state order.
-			configObjs := make([]attr.Value, 0, len(stateConfigs))
-			for _, sc := range stateConfigs {
-				name := sc.Name.ValueString()
-				if apiCfg, ok := apiByName[name]; ok {
-					enabled := types.BoolValue(apiCfg.Enabled)
-					permPolicy := types.StringValue(apiCfg.PermissionPolicy.Type)
-					// Preserve null for fields the user didn't specify.
-					if sc.Enabled.IsNull() {
-						enabled = types.BoolNull()
-					}
-					if sc.PermissionPolicy.IsNull() {
-						permPolicy = types.StringNull()
-					}
-					obj, d := types.ObjectValue(agentToolConfigAttrTypes, map[string]attr.Value{
-						"name":              types.StringValue(name),
-						"enabled":           enabled,
-						"permission_policy": permPolicy,
-					})
-					diags.Append(d...)
-					configObjs = append(configObjs, obj)
-				}
-			}
-
-			list, d := types.ListValue(types.ObjectType{AttrTypes: agentToolConfigAttrTypes}, configObjs)
-			diags.Append(d...)
-			configsList = list
-		}
-	} else if len(apiToolset.Configs) > 0 {
-		// Import case (null state): populate all API configs.
-		configObjs := make([]attr.Value, 0, len(apiToolset.Configs))
-		for _, c := range apiToolset.Configs {
-			obj, d := types.ObjectValue(agentToolConfigAttrTypes, map[string]attr.Value{
-				"name":              types.StringValue(string(c.Name)),
-				"enabled":           types.BoolValue(c.Enabled),
-				"permission_policy": types.StringValue(c.PermissionPolicy.Type),
-			})
-			diags.Append(d...)
-			configObjs = append(configObjs, obj)
-		}
-		list, d := types.ListValue(types.ObjectType{AttrTypes: agentToolConfigAttrTypes}, configObjs)
-		diags.Append(d...)
-		configsList = list
+	configsList, d := mapToolConfigsToState(ctx, currentConfigs, apiConfigs,
+		apiToolset.DefaultConfig.Enabled, apiToolset.DefaultConfig.PermissionPolicy.Type, agentToolConfigAttrTypes)
+	diags.Append(d...)
+	if diags.HasError() {
+		return types.ObjectNull(agentToolsetAttrTypes), diags
 	}
 
 	obj, d := types.ObjectValue(agentToolsetAttrTypes, map[string]attr.Value{
@@ -1175,8 +1218,10 @@ func mapAgentToolsetToState(ctx context.Context, apiToolset *anthropic.BetaManag
 	return obj, diags
 }
 
-// mapMCPToolsetsToState maps API MCP toolsets to a Terraform list, matching by server name
-// and filtering per-tool configs to only those tracked in current state.
+// mapMCPToolsetsToState maps API MCP toolsets to a Terraform list, matching by server name.
+// Toolsets tracked in current state come first, in state order; a toolset the API returns
+// for any other server is appended in API order, so a toolset added out of band surfaces as
+// a plan diff and is removed on apply. Per-tool configs go through mapToolConfigsToState.
 func mapMCPToolsetsToState(ctx context.Context, apiToolsets []anthropic.BetaManagedAgentsMCPToolset, currentState types.List) (types.List, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
@@ -1185,111 +1230,57 @@ func mapMCPToolsetsToState(ctx context.Context, apiToolsets []anthropic.BetaMana
 		apiByServer[t.MCPServerName] = t
 	}
 
-	// Extract current state toolsets to preserve order and config filtering.
 	var stateToolsets []agentMCPToolsetModel
-	if !currentState.IsNull() {
+	if !currentState.IsNull() && !currentState.IsUnknown() {
 		diags.Append(currentState.ElementsAs(ctx, &stateToolsets, false)...)
 		if diags.HasError() {
 			return types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}), diags
 		}
 	}
 
-	toolsetObjs := make([]attr.Value, 0)
+	toolsetObjs := make([]attr.Value, 0, len(apiToolsets))
+	mapped := make(map[string]bool, len(apiToolsets))
+	appendToolset := func(apiToolset anthropic.BetaManagedAgentsMCPToolset, currentConfigs types.List) {
+		mapped[apiToolset.MCPServerName] = true
 
-	if len(stateToolsets) > 0 {
-		// Normal Read: iterate state toolsets to preserve order and filter configs.
-		for _, st := range stateToolsets {
-			serverName := st.MCPServerName.ValueString()
-			apiToolset, exists := apiByServer[serverName]
-			if !exists {
-				continue
-			}
-
-			defaultEnabled := types.BoolValue(apiToolset.DefaultConfig.Enabled)
-			defaultPermPolicy := types.StringValue(apiToolset.DefaultConfig.PermissionPolicy.Type)
-
-			configsList := types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes})
-
-			if !st.Configs.IsNull() {
-				var stateConfigs []agentToolConfigModel
-				diags.Append(st.Configs.ElementsAs(ctx, &stateConfigs, false)...)
-				if diags.HasError() {
-					return types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}), diags
-				}
-
-				apiCfgByName := map[string]anthropic.BetaManagedAgentsMCPToolConfig{}
-				for _, c := range apiToolset.Configs {
-					apiCfgByName[c.Name] = c
-				}
-
-				configObjs := make([]attr.Value, 0, len(stateConfigs))
-				for _, sc := range stateConfigs {
-					name := sc.Name.ValueString()
-					if apiCfg, ok := apiCfgByName[name]; ok {
-						enabled := types.BoolValue(apiCfg.Enabled)
-						permPolicy := types.StringValue(apiCfg.PermissionPolicy.Type)
-						if sc.Enabled.IsNull() {
-							enabled = types.BoolNull()
-						}
-						if sc.PermissionPolicy.IsNull() {
-							permPolicy = types.StringNull()
-						}
-						obj, d := types.ObjectValue(agentMCPToolConfigAttrTypes, map[string]attr.Value{
-							"name":              types.StringValue(name),
-							"enabled":           enabled,
-							"permission_policy": permPolicy,
-						})
-						diags.Append(d...)
-						configObjs = append(configObjs, obj)
-					}
-				}
-
-				list, d := types.ListValue(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes}, configObjs)
-				diags.Append(d...)
-				configsList = list
-			}
-
-			obj, d := types.ObjectValue(agentMCPToolsetAttrTypes, map[string]attr.Value{
-				"mcp_server_name":           types.StringValue(serverName),
-				"default_enabled":           defaultEnabled,
-				"default_permission_policy": defaultPermPolicy,
-				"configs":                   configsList,
+		apiConfigs := make([]apiToolConfig, 0, len(apiToolset.Configs))
+		for _, c := range apiToolset.Configs {
+			apiConfigs = append(apiConfigs, apiToolConfig{
+				name:             c.Name,
+				enabled:          c.Enabled,
+				permissionPolicy: c.PermissionPolicy.Type,
 			})
-			diags.Append(d...)
-			toolsetObjs = append(toolsetObjs, obj)
 		}
-	} else {
-		// Import case (null/empty state): populate all API toolsets with all configs.
-		for _, apiToolset := range apiToolsets {
-			defaultEnabled := types.BoolValue(apiToolset.DefaultConfig.Enabled)
-			defaultPermPolicy := types.StringValue(apiToolset.DefaultConfig.PermissionPolicy.Type)
+		configsList, d := mapToolConfigsToState(ctx, currentConfigs, apiConfigs,
+			apiToolset.DefaultConfig.Enabled, apiToolset.DefaultConfig.PermissionPolicy.Type, agentMCPToolConfigAttrTypes)
+		diags.Append(d...)
 
-			configsList := types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes})
-			if len(apiToolset.Configs) > 0 {
-				configObjs := make([]attr.Value, 0, len(apiToolset.Configs))
-				for _, c := range apiToolset.Configs {
-					obj, d := types.ObjectValue(agentMCPToolConfigAttrTypes, map[string]attr.Value{
-						"name":              types.StringValue(c.Name),
-						"enabled":           types.BoolValue(c.Enabled),
-						"permission_policy": types.StringValue(c.PermissionPolicy.Type),
-					})
-					diags.Append(d...)
-					configObjs = append(configObjs, obj)
-				}
-				list, d := types.ListValue(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes}, configObjs)
-				diags.Append(d...)
-				configsList = list
-			}
+		obj, d := types.ObjectValue(agentMCPToolsetAttrTypes, map[string]attr.Value{
+			"mcp_server_name":           types.StringValue(apiToolset.MCPServerName),
+			"default_enabled":           types.BoolValue(apiToolset.DefaultConfig.Enabled),
+			"default_permission_policy": types.StringValue(apiToolset.DefaultConfig.PermissionPolicy.Type),
+			"configs":                   configsList,
+		})
+		diags.Append(d...)
+		toolsetObjs = append(toolsetObjs, obj)
+	}
 
-			obj, d := types.ObjectValue(agentMCPToolsetAttrTypes, map[string]attr.Value{
-				"mcp_server_name":           types.StringValue(apiToolset.MCPServerName),
-				"default_enabled":           defaultEnabled,
-				"default_permission_policy": defaultPermPolicy,
-				"configs":                   configsList,
-			})
-			diags.Append(d...)
-			toolsetObjs = append(toolsetObjs, obj)
+	for _, st := range stateToolsets {
+		serverName := st.MCPServerName.ValueString()
+		apiToolset, exists := apiByServer[serverName]
+		if !exists || mapped[serverName] {
+			continue
 		}
+		appendToolset(apiToolset, st.Configs)
+	}
+	for _, apiToolset := range apiToolsets {
+		if mapped[apiToolset.MCPServerName] {
+			continue
+		}
+		appendToolset(apiToolset, types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes}))
+	}
+	if diags.HasError() {
+		return types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}), diags
 	}
 
 	list, d := types.ListValue(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}, toolsetObjs)
