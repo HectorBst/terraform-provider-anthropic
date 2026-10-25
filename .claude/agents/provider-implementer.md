@@ -33,7 +33,7 @@ You run in an isolated git worktree. Fetch `origin`, then create the spec's bran
 Done means all of the following:
 1. `make` passes (format, lint, unit tests, install, docs generation);
 2. `pre-commit run -a` passes (run `mise trust` once in the worktree if the `poutine` hook reports an untrusted `mise.toml`);
-3. `make terraform-test` passes, or you report it as skipped because the credentials it needs are absent;
+3. `make terraform-test` passes; run it only when `ANTHROPIC_API_KEY` is set in your environment (it applies the examples against the live API), otherwise report it as skipped without running it;
 4. the regenerated page under `docs/` has a non-empty `subcategory`;
 5. one local commit on the spec's branch, staging your files by path (never `git add -A`), with a conventional commit message such as `feat: add anthropic_<name> resource`.
 
