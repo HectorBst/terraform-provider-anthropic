@@ -259,6 +259,8 @@ func (p *AnthropicProvider) Resources(ctx context.Context) []func() resource.Res
 		messages.NewMessageResource,
 		organizations.NewInviteResource,
 		organizations.NewOrganizationMemberResource,
+		plugins.NewPluginInstallationSettingResource,
+		plugins.NewPluginMarketplaceSettingsResource,
 		plugins.NewPluginResource,
 		plugins.NewPluginVersionResource,
 		serviceaccounts.NewServiceAccountResource,
