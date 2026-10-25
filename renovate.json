@@ -8,6 +8,7 @@
   ],
   "labels": ["dependencies"],
   "platformAutomerge": true,
+  "osvVulnerabilityAlerts": true,
   "enabledManagers": [
     "github-actions",
     "gomod",

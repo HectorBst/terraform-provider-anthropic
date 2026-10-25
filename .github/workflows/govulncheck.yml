@@ -1,0 +1,60 @@
+name: Govulncheck
+
+# Reports known vulnerabilities that the provider's code actually reaches
+# (call-graph analysis against the Go vulnerability database). It runs on every
+# pull request so a change cannot bring one in, and weekly on main because new
+# advisories are published without any change to this repository.
+on:
+  pull_request:
+  merge_group:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # sum.golang.org: `go install <pkg>@<version>` verifies the downloaded
+      # modules against the checksum database, which proxy.golang.org does not
+      # mirror. vuln.go.dev: the vulnerability database govulncheck queries.
+      - name: Harden runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            proxy.golang.org:443
+            release-assets.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
+            vuln.go.dev:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # setup-go reads the `toolchain` directive of go.mod before the `go`
+      # one, so the scan runs on the Go version releases are built with: the
+      # standard-library findings are only meaningful for that version.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Install govulncheck
+        env:
+          # renovate: datasource=go depName=golang.org/x/vuln
+          GOVULNCHECK_VERSION: v1.9.0
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+
+      # Exits non-zero only for vulnerabilities the code can reach; findings in
+      # packages or modules that are required but never called are listed with
+      # `-show verbose` and do not fail the job.
+      - name: Run govulncheck
+        run: govulncheck ./...

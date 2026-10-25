@@ -29,8 +29,9 @@ shows its recent runs and their logs.
 | `extends` | `config:recommended`, `:semanticCommits`, `:dependencyDashboard`, `:enablePreCommit` |
 | `labels` | `dependencies` |
 | `platformAutomerge` | Uses GitHub's own auto-merge, so branch protection and required checks are respected. This is already the default; kept explicit because the whole automerge policy depends on it |
+| `osvVulnerabilityAlerts` | Checks every dependency version in use against [OSV](https://osv.dev/) and opens a dedicated `[SECURITY]` fix PR, ungrouped and without the 3-day cooldown. It also covers the Go modules marked `// indirect` in `go.mod`, which Renovate otherwise never updates, and the Go standard library through the `toolchain` directive (see [Go version](#go-version)). Experimental upstream |
 | `enabledManagers` | `github-actions`, `gomod`, `mise`, `pre-commit`, `custom.regex`, `npm` |
-| `customManagers` | One regex manager, see [Custom managers](#custom-managers) below |
+| `customManagers` | Two regex managers, see [Custom managers](#custom-managers) below |
 | `packageRules` | One grouped PR per manager, automerge for `minor` / `patch` / `pin` / `digest` updates after a 3-day `minimumReleaseAge` cooldown, except release tooling (see [Release tooling](#release-tooling)), plus a version hold on the Anthropic Go SDK (see [Version holds](#version-holds)) |
 
 Two of these entries are less obvious than they look:
@@ -102,6 +103,23 @@ their lockfile, and the actions used by the two workflows) into their own `relea
 maintainer reviews the release notes and the diff of each one before merging. The rule matches by file,
 not by package, so the same action used in other workflows (`actions/checkout`, say) keeps its
 automerged `GitHub Actions` group there; only its release-workflow occurrence waits for review.
+
+## Go version
+
+`go.mod` carries two Go versions, and Renovate treats them differently:
+
+| Directive | Meaning | Renovate |
+|---|---|---|
+| `go 1.26.2` | Language version: the oldest Go that can build the module, and the `GODEBUG` defaults compiled into the binary | Never proposes an update, by design ([gomod manager docs](https://docs.renovatebot.com/modules/manager/gomod/#updating-of-go-mod-and-toolchain-directives)). Raise it by hand, deliberately |
+| `toolchain go1.26.10` | The Go release CI tests with and releases are built with: `actions/setup-go` reads it before the `go` directive | Proposes updates by default, inside the `Go dependencies` group. `osvVulnerabilityAlerts` matches it against the standard-library advisories; it skips the `go` directive |
+
+The `toolchain` line is what keeps the standard-library vulnerabilities out of the released binaries, so
+leave it in place: `go mod tidy` removes it as soon as it is not newer than the `go` directive.
+
+Expect Renovate to propose the latest Go release for the toolchain, a minor update when a new Go minor is
+out. golangci-lint refuses to analyse a module whose toolchain is a newer Go minor than the one it was
+built with, so such a PR stays red on the `lint` job, and is not automerged, until the golangci-lint used
+by CI is built with that Go.
 
 ## Version holds
 
