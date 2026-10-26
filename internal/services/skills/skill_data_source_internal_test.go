@@ -41,13 +41,13 @@ func TestSkillDataSourceRead_betaShape(t *testing.T) {
 		"skill_id": tfString(fixtureSkillID),
 	})
 	assertStringAttrs(t, state, map[string]*string{
-		"id":             ptr(fixtureSkillID),
-		"display_title":  ptr("Test Skill"),
-		"created_at":     ptr(fixtureSkillCreated),
-		"updated_at":     ptr(fixtureSkillUpdated),
-		"latest_version": ptr(fixtureSkillVersion),
-		"source":         ptr("custom"),
-		"type":           ptr("skill"),
+		"id":             new(fixtureSkillID),
+		"display_title":  new("Test Skill"),
+		"created_at":     new(fixtureSkillCreated),
+		"updated_at":     new(fixtureSkillUpdated),
+		"latest_version": new(fixtureSkillVersion),
+		"source":         new("custom"),
+		"type":           new("skill"),
 	})
 }
 
@@ -62,7 +62,7 @@ func TestSkillDataSourceRead_emptyDisplayTitle(t *testing.T) {
 	})
 	assertStringAttrs(t, state, map[string]*string{
 		"display_title": nil,
-		"source":        ptr("anthropic"),
+		"source":        new("anthropic"),
 	})
 }
 
@@ -77,8 +77,8 @@ func TestSkillDataSourceRead_notAnObject(t *testing.T) {
 		"skill_id": tfString("skill_x"),
 	})
 	assertStringAttrs(t, state, map[string]*string{
-		"id":            ptr(""),
+		"id":            new(""),
 		"display_title": nil,
-		"source":        ptr(""),
+		"source":        new(""),
 	})
 }

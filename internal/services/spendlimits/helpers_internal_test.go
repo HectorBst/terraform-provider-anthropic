@@ -6,6 +6,7 @@ package spendlimits
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -77,9 +78,7 @@ func assertBetaQuery(t *testing.T, req recordedRequest) {
 func resourceValue(t *testing.T, r resource.Resource, set map[string]tftypes.Value) tftypes.Value {
 	t.Helper()
 	vals := schematest.NullValues(t, r)
-	for name, v := range set {
-		vals[name] = v
-	}
+	maps.Copy(vals, set)
 	return tftypes.NewValue(schematest.ResourceObjectType(t, r), vals)
 }
 

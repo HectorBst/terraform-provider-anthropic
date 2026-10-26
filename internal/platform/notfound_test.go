@@ -65,8 +65,7 @@ func TestNotFoundGuardPassesTheAPIsNotFound(t *testing.T) {
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("err = %v, want an *anthropic.Error with status 404", err)
 	}
-	var unserved *platform.UnservedRouteError
-	if errors.As(err, &unserved) {
+	if _, ok := errors.AsType[*platform.UnservedRouteError](err); ok {
 		t.Errorf("an API not_found_error was reported as an unserved route: %v", err)
 	}
 	if n := hits.Load(); n != 1 {
@@ -99,8 +98,7 @@ func TestNotFoundGuardRejectsOther404s(t *testing.T) {
 				if !errors.As(err, &unserved) {
 					t.Fatalf("%s: err = %v (%T), want *platform.UnservedRouteError", p, err, err)
 				}
-				var apiErr *anthropic.Error
-				if errors.As(err, &apiErr) {
+				if _, ok := errors.AsType[*anthropic.Error](err); ok {
 					t.Errorf("%s: the error also matches *anthropic.Error, so a status check could still read it as a deletion", p)
 				}
 				if unserved.Platform != p || unserved.Method != http.MethodGet || !strings.HasSuffix(unserved.URL, "/v1/files/file_1") {

@@ -84,12 +84,12 @@ func TestSkillResourceCreate_betaShape(t *testing.T) {
 	}
 
 	assertStringAttrs(t, resp.State, map[string]*string{
-		"id":             ptr(fixtureSkillID),
-		"display_title":  ptr("Test Skill"),
-		"created_at":     ptr(fixtureSkillCreated),
-		"updated_at":     ptr(fixtureSkillUpdated),
-		"latest_version": ptr(fixtureSkillVersion),
-		"source":         ptr("custom"),
+		"id":             new(fixtureSkillID),
+		"display_title":  new("Test Skill"),
+		"created_at":     new(fixtureSkillCreated),
+		"updated_at":     new(fixtureSkillUpdated),
+		"latest_version": new(fixtureSkillVersion),
+		"source":         new("custom"),
 	})
 }
 
@@ -117,7 +117,7 @@ func TestSkillResourceCreate_noDisplayTitle(t *testing.T) {
 		t.Errorf("no form field expected without display_title, got %q", fields)
 	}
 	// display_title not configured: the API's derived title is not adopted.
-	assertStringAttrs(t, resp.State, map[string]*string{"display_title": nil, "id": ptr(fixtureSkillID)})
+	assertStringAttrs(t, resp.State, map[string]*string{"display_title": nil, "id": new(fixtureSkillID)})
 }
 
 func TestSkillResourceRead_betaShape(t *testing.T) {
@@ -145,19 +145,19 @@ func TestSkillResourceRead_betaShape(t *testing.T) {
 		"created_at": tfString(fixtureSkillCreated),
 	})
 	assertStringAttrs(t, resp.State, map[string]*string{
-		"id":             ptr(fixtureSkillID),
+		"id":             new(fixtureSkillID),
 		"display_title":  nil,
-		"created_at":     ptr(fixtureSkillCreated),
-		"updated_at":     ptr(fixtureSkillUpdated),
-		"latest_version": ptr(fixtureSkillVersion),
-		"source":         ptr("custom"),
+		"created_at":     new(fixtureSkillCreated),
+		"updated_at":     new(fixtureSkillUpdated),
+		"latest_version": new(fixtureSkillVersion),
+		"source":         new("custom"),
 	})
 
 	// Import (only the ID in state): display_title is read from the API.
 	resp = read(map[string]tftypes.Value{"id": tfString(fixtureSkillID)})
 	assertStringAttrs(t, resp.State, map[string]*string{
-		"display_title": ptr("Test Skill"),
-		"created_at":    ptr(fixtureSkillCreated),
+		"display_title": new("Test Skill"),
+		"created_at":    new(fixtureSkillCreated),
 	})
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -117,9 +118,7 @@ func runDataSourceRead(t *testing.T, d datasource.DataSource, set map[string]tft
 	for name, typ := range objType.AttributeTypes {
 		vals[name] = tftypes.NewValue(typ, nil)
 	}
-	for name, v := range set {
-		vals[name] = v
-	}
+	maps.Copy(vals, set)
 
 	req := datasource.ReadRequest{Config: tfsdk.Config{Raw: tftypes.NewValue(objType, vals), Schema: schemaResp.Schema}}
 	resp := &datasource.ReadResponse{State: tfsdk.State{Schema: schemaResp.Schema}}

@@ -277,21 +277,17 @@ func TestPluginInstallationSettingWrites_areSerializedPerPlugin(t *testing.T) {
 	const pluginID = "plugin_serialized"
 	var wg sync.WaitGroup
 	for _, target := range []string{"organization", "rbac_group_a", "rbac_group_b"} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := setPluginInstallationSetting(context.Background(), client, pluginID, target, "required"); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := removePluginInstallationSetting(context.Background(), client, pluginID, "rbac_group_c"); err != nil {
 			t.Error(err)
 		}
-	}()
+	})
 	wg.Wait()
 
 	if maxInFlight.Load() != 1 {

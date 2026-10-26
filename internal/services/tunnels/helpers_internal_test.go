@@ -5,6 +5,7 @@ package tunnels
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"sync"
 	"testing"
@@ -108,9 +109,7 @@ func readDataSource(t *testing.T, ds datasource.DataSource, overrides map[string
 	for name, typ := range objType.AttributeTypes {
 		vals[name] = tftypes.NewValue(typ, nil)
 	}
-	for k, v := range overrides {
-		vals[k] = v
-	}
+	maps.Copy(vals, overrides)
 
 	req := datasource.ReadRequest{Config: tfsdk.Config{Raw: tftypes.NewValue(objType, vals), Schema: sch}}
 	resp := datasource.ReadResponse{State: tfsdk.State{Schema: sch}}

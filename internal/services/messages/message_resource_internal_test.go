@@ -389,9 +389,7 @@ func validateConfig(t *testing.T, cfg map[string]tftypes.Value) diag.Diagnostics
 	for name, at := range typ.AttributeTypes {
 		vals[name] = tftypes.NewValue(at, nil)
 	}
-	for k, v := range cfg {
-		vals[k] = v
-	}
+	maps.Copy(vals, cfg)
 	req := resource.ValidateConfigRequest{Config: tfsdk.Config{Schema: sresp.Schema, Raw: tftypes.NewValue(typ, vals)}}
 	var resp resource.ValidateConfigResponse
 	for _, v := range r.(resource.ResourceWithConfigValidators).ConfigValidators(context.Background()) {

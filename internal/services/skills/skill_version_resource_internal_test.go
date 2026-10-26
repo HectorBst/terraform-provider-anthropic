@@ -28,13 +28,13 @@ func skillVersionResourceSchema(t *testing.T) (rschema.Schema, tftypes.Object) {
 // betaSkillVersionState is what SDK v1.67.0 mapped from betaSkillVersionJSON.
 func betaSkillVersionState() map[string]*string {
 	return map[string]*string{
-		"id":          ptr(fixtureVersionID),
-		"skill_id":    ptr(fixtureSkillID),
-		"version":     ptr(fixtureSkillVersion),
-		"name":        ptr("test-skill"),
-		"description": ptr("For testing."),
-		"directory":   ptr("test-skill"),
-		"created_at":  ptr(fixtureVersionCreate),
+		"id":          new(fixtureVersionID),
+		"skill_id":    new(fixtureSkillID),
+		"version":     new(fixtureSkillVersion),
+		"name":        new("test-skill"),
+		"description": new("For testing."),
+		"directory":   new("test-skill"),
+		"created_at":  new(fixtureVersionCreate),
 	}
 }
 

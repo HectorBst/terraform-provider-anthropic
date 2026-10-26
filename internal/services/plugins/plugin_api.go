@@ -14,9 +14,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -40,9 +42,7 @@ const (
 // query flag. An upload (a raw multipart body) gets a timeout sized for it.
 func pluginsRequest(ctx context.Context, client *admin.Client, method, path string, query url.Values, body any) ([]byte, error) {
 	q := url.Values{}
-	for k, v := range query {
-		q[k] = v
-	}
+	maps.Copy(q, query)
 	q.Set("beta", "true")
 	if raw, ok := body.(admin.RawBody); ok {
 		client = withUploadTimeout(client, len(raw.Data))
@@ -53,11 +53,11 @@ func pluginsRequest(ctx context.Context, client *admin.Client, method, path stri
 // pluginPath returns the path of one plugin, or of one of its sub-resources
 // when more segments are given.
 func pluginPath(pluginID string, segments ...string) string {
-	p := pluginsPath + "/" + url.PathEscape(pluginID)
+	parts := []string{pluginsPath, url.PathEscape(pluginID)}
 	for _, s := range segments {
-		p += "/" + url.PathEscape(s)
+		parts = append(parts, url.PathEscape(s))
 	}
-	return p
+	return strings.Join(parts, "/")
 }
 
 // --- API objects ---
@@ -201,9 +201,7 @@ func listPluginsPages[T any](ctx context.Context, client *admin.Client, path str
 // or cycles through a few, would otherwise hang plan and refresh.
 func listPluginsPagesUpTo[T any](ctx context.Context, client *admin.Client, path string, query url.Values, limit, maxPages int, visit func(T) bool) error {
 	q := url.Values{}
-	for k, v := range query {
-		q[k] = v
-	}
+	maps.Copy(q, query)
 	q.Set("limit", strconv.Itoa(limit))
 	sent := map[string]bool{}
 	for pages := 1; ; pages++ {

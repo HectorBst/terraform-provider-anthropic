@@ -296,8 +296,7 @@ func TestSDKClient_gateway404IsNotADeletion(t *testing.T) {
 	if IsNotFound(err) {
 		t.Fatal("a gateway 404 was read as an Admin API 404")
 	}
-	var unserved *platform.UnservedRouteError
-	if !errors.As(err, &unserved) {
+	if _, ok := errors.AsType[*platform.UnservedRouteError](err); !ok {
 		t.Fatalf("err = %v (%T), want *platform.UnservedRouteError", err, err)
 	}
 	if got := calls.Load(); got != 1 {

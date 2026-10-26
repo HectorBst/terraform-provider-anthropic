@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -246,9 +247,7 @@ func jwksObjectFor(t *testing.T, values map[string]attr.Value) types.Object {
 		"keys":           jsontypes.NewNormalizedNull(),
 		"ca_cert_pem":    types.StringNull(),
 	}
-	for k, v := range values {
-		base[k] = v
-	}
+	maps.Copy(base, values)
 	obj, diags := types.ObjectValue(federationIssuerJWKSAttrTypes, base)
 	if diags.HasError() {
 		t.Fatalf("failed to build jwks object: %+v", diags)
@@ -362,9 +361,7 @@ func jwksTfValue(t *testing.T, jwksType tftypes.Object, overrides map[string]tft
 	for name, typ := range jwksType.AttributeTypes {
 		vals[name] = tftypes.NewValue(typ, nil)
 	}
-	for k, v := range overrides {
-		vals[k] = v
-	}
+	maps.Copy(vals, overrides)
 	return tftypes.NewValue(jwksType, vals)
 }
 

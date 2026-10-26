@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -278,9 +279,7 @@ func configureOnPlatform(t *testing.T, srv *httptest.Server, p platform.Platform
 func workspaceTFValue(t *testing.T, r resource.Resource, set map[string]tftypes.Value) tftypes.Value {
 	t.Helper()
 	values := schematest.NullValues(t, r)
-	for k, v := range set {
-		values[k] = v
-	}
+	maps.Copy(values, set)
 	return tftypes.NewValue(schematest.ResourceObjectType(t, r), values)
 }
 

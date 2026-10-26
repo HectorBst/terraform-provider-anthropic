@@ -6,6 +6,7 @@ package skills
 import (
 	"context"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"net/http/httptest"
@@ -216,9 +217,7 @@ func tfObjectValue(typ tftypes.Object, vals map[string]tftypes.Value) tftypes.Va
 	for name, at := range typ.AttributeTypes {
 		all[name] = tftypes.NewValue(at, nil)
 	}
-	for name, v := range vals {
-		all[name] = v
-	}
+	maps.Copy(all, vals)
 	return tftypes.NewValue(typ, all)
 }
 
@@ -226,7 +225,7 @@ func tfString(s string) tftypes.Value { return tftypes.NewValue(tftypes.String, 
 
 // attrGetter is what tfsdk.State and tfsdk.Plan have in common.
 type attrGetter interface {
-	GetAttribute(ctx context.Context, p path.Path, target interface{}) diag.Diagnostics
+	GetAttribute(ctx context.Context, p path.Path, target any) diag.Diagnostics
 }
 
 // assertStringAttrs compares string attributes. A nil want means the attribute
@@ -246,8 +245,6 @@ func assertStringAttrs(t *testing.T, g attrGetter, want map[string]*string) {
 		}
 	}
 }
-
-func ptr(s string) *string { return &s }
 
 // multipartParts reads a multipart request into its form fields (name to
 // values) and "name=filename" for each file part, in order. It runs on the

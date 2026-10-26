@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -181,9 +182,7 @@ func readDataSource(t *testing.T, d datasource.DataSource, set map[string]tftype
 	for name, typ := range objType.AttributeTypes {
 		vals[name] = tftypes.NewValue(typ, nil)
 	}
-	for name, v := range set {
-		vals[name] = v
-	}
+	maps.Copy(vals, set)
 
 	config := tfsdk.Config{Schema: schemaResp.Schema, Raw: tftypes.NewValue(objType, vals)}
 	resp := datasource.ReadResponse{State: tfsdk.State{Schema: schemaResp.Schema}}

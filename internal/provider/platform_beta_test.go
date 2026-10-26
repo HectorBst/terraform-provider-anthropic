@@ -4,6 +4,7 @@
 package provider
 
 import (
+	"maps"
 	"strings"
 	"testing"
 
@@ -23,9 +24,7 @@ func (s *protocolServer) protocolBlock(name string, set map[string]tftypes.Value
 	for attr, attrType := range typ.AttributeTypes {
 		values[attr] = tftypes.NewValue(attrType, nil)
 	}
-	for attr, v := range set {
-		values[attr] = v
-	}
+	maps.Copy(values, set)
 	return tftypes.NewValue(typ, values)
 }
 

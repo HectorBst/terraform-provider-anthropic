@@ -533,8 +533,7 @@ func TestAdminClient_doRequest_retriesConnectionErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
+	if _, ok := errors.AsType[*APIError](err); ok {
 		t.Fatalf("expected a transport error, got *APIError: %v", err)
 	}
 }

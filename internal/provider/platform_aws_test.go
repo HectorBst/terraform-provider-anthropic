@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -161,7 +162,7 @@ func verifySigV4(r *http.Request, body []byte, creds awssdk.Credentials, region 
 	if err != nil {
 		return err
 	}
-	for _, name := range strings.Split(m[2], ";") {
+	for name := range strings.SplitSeq(m[2], ";") {
 		if name != "host" {
 			replay.Header[http.CanonicalHeaderKey(name)] = r.Header.Values(name)
 		}
@@ -482,12 +483,8 @@ func TestConfigureAWSRejects(t *testing.T) {
 	keys := map[string]any{"region": awsTestRegion, "access_key": awsTestAccessKey, "secret_key": awsTestSecretKey}
 	with := func(extra map[string]any) map[string]any {
 		m := map[string]any{}
-		for k, v := range keys {
-			m[k] = v
-		}
-		for k, v := range extra {
-			m[k] = v
-		}
+		maps.Copy(m, keys)
+		maps.Copy(m, extra)
 		return m
 	}
 	ws := tfString(awsTestWorkspace)

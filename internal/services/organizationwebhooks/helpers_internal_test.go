@@ -6,6 +6,7 @@ package organizationwebhooks
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -123,9 +124,7 @@ func webhookJSON(t *testing.T, overrides map[string]any) string {
 		"created_at":      "2026-10-20T19:00:00Z",
 		"updated_at":      "2026-10-20T19:00:00Z",
 	}
-	for k, v := range overrides {
-		ep[k] = v
-	}
+	maps.Copy(ep, overrides)
 	b, err := json.Marshal(ep)
 	if err != nil {
 		t.Fatalf("marshal fixture: %v", err)

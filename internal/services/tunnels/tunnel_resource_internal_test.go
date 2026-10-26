@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -107,9 +108,7 @@ func TestTokenFollowsRotation(t *testing.T) {
 	base := map[string]string{"id": "tnl_01ABC", "domain": "d", "created_at": "2026-07-01T10:00:00Z", "token": "secret-token-1", "token_id": "ttok_01"}
 	with := func(rotation string) map[string]string {
 		m := map[string]string{}
-		for k, v := range base {
-			m[k] = v
-		}
+		maps.Copy(m, base)
 		if rotation != "" {
 			m["token_rotation"] = rotation
 		}

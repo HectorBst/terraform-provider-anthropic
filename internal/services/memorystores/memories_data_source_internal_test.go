@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -132,9 +133,7 @@ func readMemoriesDataSource(t *testing.T, client *anthropic.Client, overrides ma
 	sch := memoriesDataSourceSchema(t)
 	objType := memoriesConfigObjectType(t)
 	vals := memoriesNullConfigValues(t)
-	for k, v := range overrides {
-		vals[k] = v
-	}
+	maps.Copy(vals, overrides)
 
 	d := &MemoriesDataSource{client: client}
 	req := datasource.ReadRequest{

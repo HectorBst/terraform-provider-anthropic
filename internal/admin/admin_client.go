@@ -321,8 +321,7 @@ func (c *Client) sdkAttempt(template *http.Request, reqBody []byte) ([]byte, *ht
 	var body []byte
 	err := c.sdk.Execute(template.Context(), template.Method, path, params, &body, opts...)
 	if err != nil {
-		var apiErr *anthropic.Error
-		if errors.As(err, &apiErr) {
+		if apiErr, ok := errors.AsType[*anthropic.Error](err); ok {
 			return nil, apiErr.Response, newAPIError(apiErr.StatusCode, []byte(apiErr.RawJSON()))
 		}
 		return nil, res, err

@@ -6,6 +6,7 @@ package models
 import (
 	"context"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -108,9 +109,7 @@ func readDataSource(t *testing.T, d datasource.DataSource, vals map[string]tftyp
 	for name, attrType := range typ.AttributeTypes {
 		all[name] = tftypes.NewValue(attrType, nil)
 	}
-	for name, v := range vals {
-		all[name] = v
-	}
+	maps.Copy(all, vals)
 	req := datasource.ReadRequest{Config: tfsdk.Config{Raw: tftypes.NewValue(typ, all), Schema: schemaResp.Schema}}
 	resp := &datasource.ReadResponse{State: tfsdk.State{Schema: schemaResp.Schema}}
 	d.Read(ctx, req, resp)
@@ -158,8 +157,6 @@ func attrPath(dotted string) path.Path {
 	return p
 }
 
-func ptr(s string) *string { return &s }
-
 func newModelsServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -184,14 +181,14 @@ func TestModelDataSourceRead_lifecycleAndCapabilities(t *testing.T) {
 		t.Errorf("path = %q, want /v1/models/claude-sonnet-4-5", gotPath)
 	}
 	assertAttrs(t, state, map[string]*string{
-		"model_id":        ptr("claude-sonnet-4-5"),
-		"id":              ptr("claude-sonnet-4-5-20250929"),
-		"display_name":    ptr("Claude Sonnet 4.5"),
-		"created_at":      ptr("2025-09-29T00:00:00Z"),
-		"lifecycle_stage": ptr("deprecated"),
-		"deprecated_at":   ptr("2026-08-01T00:00:00Z"),
-		"retires_at":      ptr("2027-02-01T00:00:00Z"),
-		"line":            ptr("sonnet"),
+		"model_id":        new("claude-sonnet-4-5"),
+		"id":              new("claude-sonnet-4-5-20250929"),
+		"display_name":    new("Claude Sonnet 4.5"),
+		"created_at":      new("2025-09-29T00:00:00Z"),
+		"lifecycle_stage": new("deprecated"),
+		"deprecated_at":   new("2026-08-01T00:00:00Z"),
+		"retires_at":      new("2027-02-01T00:00:00Z"),
+		"line":            new("sonnet"),
 	}, map[string]bool{
 		"capabilities.batch":                                       true,
 		"capabilities.citations":                                   true,
@@ -233,7 +230,7 @@ func TestModelDataSourceRead_activeModelNulls(t *testing.T) {
 	})
 
 	assertAttrs(t, state, map[string]*string{
-		"lifecycle_stage": ptr("active"),
+		"lifecycle_stage": new("active"),
 		"deprecated_at":   nil,
 		"retires_at":      nil,
 		"line":            nil,

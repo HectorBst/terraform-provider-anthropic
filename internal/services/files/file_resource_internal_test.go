@@ -186,9 +186,9 @@ const uploadedFileJSON = `{"id":"file_abc","filename":"f.txt","mime_type":"text/
 func TestUploadFile_success(t *testing.T) {
 	t.Parallel()
 
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(uploadedFileJSON))
 	}))
@@ -201,7 +201,7 @@ func TestUploadFile_success(t *testing.T) {
 	if file.ID != "file_abc" {
 		t.Errorf("ID = %q, want file_abc", file.ID)
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Errorf("calls = %d, want 1", got)
 	}
 }
@@ -212,9 +212,9 @@ func TestUploadFile_success(t *testing.T) {
 func TestUploadFile_serverErrorNotRetried(t *testing.T) {
 	t.Parallel()
 
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.Header().Set("retry-after-ms", "1")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"api_error","message":"boom"}}`))
@@ -225,7 +225,7 @@ func TestUploadFile_serverErrorNotRetried(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error, got none")
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Errorf("calls = %d, want 1 (5xx must not be retried)", got)
 	}
 }
@@ -234,10 +234,10 @@ func TestUploadFile_serverErrorNotRetried(t *testing.T) {
 func TestUploadFile_rateLimitedThenSucceeds(t *testing.T) {
 	t.Parallel()
 
-	var calls int32
+	var calls atomic.Int32
 	var bodies [2]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&calls, 1)
+		n := calls.Add(1)
 		if b, err := io.ReadAll(r.Body); err == nil && n <= 2 {
 			bodies[n-1] = string(b)
 		}
@@ -259,7 +259,7 @@ func TestUploadFile_rateLimitedThenSucceeds(t *testing.T) {
 	if file.ID != "file_abc" {
 		t.Errorf("ID = %q, want file_abc", file.ID)
 	}
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Errorf("calls = %d, want 2 (one 429, one success)", got)
 	}
 	if !strings.Contains(bodies[1], "hello") || bodies[0] != bodies[1] {

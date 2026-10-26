@@ -6,6 +6,7 @@ package telemetrydestinations
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -140,9 +141,7 @@ func destinationJSON(t *testing.T, overrides map[string]any) string {
 		"created_at": "2026-10-20T19:00:00Z",
 		"updated_at": "2026-10-20T19:00:00Z",
 	}
-	for k, v := range overrides {
-		d[k] = v
-	}
+	maps.Copy(d, overrides)
 	b, err := json.Marshal(d)
 	if err != nil {
 		t.Fatalf("marshal fixture: %v", err)

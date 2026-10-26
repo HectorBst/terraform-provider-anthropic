@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
@@ -449,9 +450,7 @@ func buildUserProfileMetadataUpdate(ctx context.Context, plan, state types.Map) 
 		if diags.HasError() {
 			return nil, diags
 		}
-		for k, v := range pm {
-			update[k] = v
-		}
+		maps.Copy(update, pm)
 	}
 
 	if !state.IsNull() && !state.IsUnknown() {

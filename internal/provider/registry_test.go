@@ -125,8 +125,7 @@ func TestFirstPartyClientReadsEvery404AsTheAPIs(t *testing.T) {
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
 		t.Fatalf("err = %v, want an *anthropic.Error with status 404", err)
 	}
-	var unserved *platform.UnservedRouteError
-	if errors.As(err, &unserved) {
+	if _, ok := errors.AsType[*platform.UnservedRouteError](err); ok {
 		t.Error("the first-party client reinterpreted a 404")
 	}
 }

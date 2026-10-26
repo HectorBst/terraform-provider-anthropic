@@ -40,9 +40,7 @@ func readDataSource(t *testing.T, d datasource.DataSource, overrides map[string]
 	for name, typ := range objType.AttributeTypes {
 		vals[name] = tftypes.NewValue(typ, nil)
 	}
-	for name, v := range overrides {
-		vals[name] = v
-	}
+	maps.Copy(vals, overrides)
 
 	req := datasource.ReadRequest{Config: tfsdk.Config{
 		Raw:    tftypes.NewValue(objType, vals),

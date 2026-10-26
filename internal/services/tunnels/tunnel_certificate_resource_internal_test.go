@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"math/big"
 	"net/http"
 	"strings"
@@ -317,9 +318,7 @@ func TestTunnelCertificateResource_Update_noAPICall(t *testing.T) {
 
 	computed := map[string]string{"id": "tcrt_01", "tunnel_id": "tnl_01ABC", "fingerprint": "abcd", "created_at": "2026-07-01T10:00:00Z"}
 	plan := map[string]string{"ca_certificate_pem": "new text"}
-	for k, v := range computed {
-		plan[k] = v
-	}
+	maps.Copy(plan, computed)
 	resp := &resource.UpdateResponse{State: resourceState(t, r, computed)}
 	r.Update(context.Background(), resource.UpdateRequest{State: resourceState(t, r, computed), Plan: resourcePlan(t, r, plan)}, resp)
 	if resp.Diagnostics.HasError() {

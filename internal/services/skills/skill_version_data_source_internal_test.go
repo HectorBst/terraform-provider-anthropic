@@ -20,6 +20,6 @@ func TestSkillVersionDataSourceRead_betaShape(t *testing.T) {
 		"version":  tfString(fixtureSkillVersion),
 	})
 	want := betaSkillVersionState()
-	want["type"] = ptr("skill_version")
+	want["type"] = new("skill_version")
 	assertStringAttrs(t, state, want)
 }

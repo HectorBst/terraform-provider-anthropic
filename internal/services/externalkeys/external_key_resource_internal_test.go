@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -95,9 +96,7 @@ func keyValue(t *testing.T, top, pc map[string]any) tftypes.Value {
 	t.Helper()
 	objType := schematest.ResourceObjectType(t, &ExternalKeyResource{})
 	all := map[string]any{}
-	for k, v := range top {
-		all[k] = v
-	}
+	maps.Copy(all, top)
 	all["provider_config"] = objectValue(objType.AttributeTypes["provider_config"].(tftypes.Object), pc)
 	return objectValue(objType, all)
 }
@@ -521,17 +520,17 @@ func TestExternalKeyResource_ModifyPlan(t *testing.T) {
 		wantWarning  bool
 		wantNoChange bool
 	}{
-		{name: "attached, kms_arn change", attachment: "attached", plan: ptr(planWith(awsStateTop("attached"), newARNPC)), wantError: "provider_config.kms_arn"},
-		{name: "attached, provider switch", attachment: "attached", plan: ptr(planWith(awsStateTop("attached"), gcpPC)), wantError: "provider_config.type"},
-		{name: "attached, geo change", attachment: "attached", plan: ptr(planWith(euGeo, awsStatePC())), wantError: "geo"},
-		{name: "attached, display_name only", attachment: "attached", plan: ptr(planWith(renamed, awsStatePC()))},
+		{name: "attached, kms_arn change", attachment: "attached", plan: new(planWith(awsStateTop("attached"), newARNPC)), wantError: "provider_config.kms_arn"},
+		{name: "attached, provider switch", attachment: "attached", plan: new(planWith(awsStateTop("attached"), gcpPC)), wantError: "provider_config.type"},
+		{name: "attached, geo change", attachment: "attached", plan: new(planWith(euGeo, awsStatePC())), wantError: "geo"},
+		{name: "attached, display_name only", attachment: "attached", plan: new(planWith(renamed, awsStatePC()))},
 		// The value is known only at apply: a warning says the update fails
 		// then if it differs.
-		{name: "attached, kms_arn unknown at plan", attachment: "attached", plan: ptr(planWith(awsStateTop("attached"), unknownARNPC)), wantWarning: true},
-		{name: "attached, geo unknown at plan", attachment: "attached", plan: ptr(planWith(unknownGeo, awsStatePC())), wantWarning: true},
-		{name: "attached, provider_config unknown at plan", attachment: "attached", plan: ptr(tfsdk.Plan{Schema: s, Raw: unknownPCValue}), wantWarning: true},
-		{name: "unattached, kms_arn unknown at plan", attachment: "unattached", plan: ptr(planWith(awsStateTop("unattached"), unknownARNPC))},
-		{name: "unattached, kms_arn change", attachment: "unattached", plan: ptr(planWith(awsStateTop("unattached"), newARNPC))},
+		{name: "attached, kms_arn unknown at plan", attachment: "attached", plan: new(planWith(awsStateTop("attached"), unknownARNPC)), wantWarning: true},
+		{name: "attached, geo unknown at plan", attachment: "attached", plan: new(planWith(unknownGeo, awsStatePC())), wantWarning: true},
+		{name: "attached, provider_config unknown at plan", attachment: "attached", plan: new(tfsdk.Plan{Schema: s, Raw: unknownPCValue}), wantWarning: true},
+		{name: "unattached, kms_arn unknown at plan", attachment: "unattached", plan: new(planWith(awsStateTop("unattached"), unknownARNPC))},
+		{name: "unattached, kms_arn change", attachment: "unattached", plan: new(planWith(awsStateTop("unattached"), newARNPC))},
 		{name: "destroy attached", attachment: "attached", wantWarning: true},
 		{name: "destroy unattached", attachment: "unattached"},
 	}
@@ -563,8 +562,7 @@ func TestExternalKeyResource_ModifyPlan(t *testing.T) {
 	}
 }
 
-func ptr[T any](v T) *T { return &v }
-
+//go:fix inline
 // --- vault_uri spelling ---
 
 // The Azure portal shows the Key Vault URI with a trailing slash. If the API

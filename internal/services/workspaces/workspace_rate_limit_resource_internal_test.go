@@ -159,8 +159,6 @@ func assertLimitsBody(t *testing.T, got []map[string]any, want []struct {
 	}
 }
 
-func i64(v int64) *int64 { return &v }
-
 func stateLimits(t *testing.T, s tfsdk.State) (map[string]int64, bool) {
 	t.Helper()
 	var m WorkspaceRateLimitResourceModel
@@ -206,8 +204,8 @@ func TestWorkspaceRateLimitResource_CreateSendsPlannedLimits(t *testing.T) {
 		typ   string
 		value *int64
 	}{
-		{"output_tokens_per_minute", i64(20000)},
-		{"requests_per_minute", i64(100)},
+		{"output_tokens_per_minute", new(int64(20000))},
+		{"requests_per_minute", new(int64(100))},
 	})
 
 	var got WorkspaceRateLimitResourceModel
@@ -252,9 +250,9 @@ func TestWorkspaceRateLimitResource_UpdateClearsRemovedTypes(t *testing.T) {
 		typ   string
 		value *int64
 	}{
-		{"input_tokens_per_minute", i64(5000)},
+		{"input_tokens_per_minute", new(int64(5000))},
 		{"output_tokens_per_minute", nil},
-		{"requests_per_minute", i64(200)},
+		{"requests_per_minute", new(int64(200))},
 	})
 
 	limits, _ := stateLimits(t, resp.State)

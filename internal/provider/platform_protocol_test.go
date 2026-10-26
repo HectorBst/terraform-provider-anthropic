@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"testing"
 
@@ -55,9 +56,7 @@ func (s *protocolServer) dynamicValue(typ tftypes.Type, set map[string]tftypes.V
 	for name, attrType := range obj.AttributeTypes {
 		values[name] = tftypes.NewValue(attrType, nil)
 	}
-	for name, v := range set {
-		values[name] = v
-	}
+	maps.Copy(values, set)
 	dv, err := tfprotov6.NewDynamicValue(typ, tftypes.NewValue(typ, values))
 	if err != nil {
 		s.t.Fatal(err)
