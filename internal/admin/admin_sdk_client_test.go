@@ -51,7 +51,7 @@ func TestSDKClient_sendsTheRequestThroughTheSDKClient(t *testing.T) {
 	var got *http.Request
 	var gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Clone(context.Background())
+		got = r.Clone(r.Context())
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "application/json")

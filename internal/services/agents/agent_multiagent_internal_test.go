@@ -288,7 +288,7 @@ func TestMapAgentResponseToDataSource_multiagent(t *testing.T) {
 		{"type":"advisor","model":"claude-opus-4-6"}]}`)
 
 	var data AgentDataSourceModel
-	if d := mapAgentResponseToDataSource(agent, &data); d.HasError() {
+	if d := mapAgentResponseToDataSource(context.Background(), agent, &data); d.HasError() {
 		t.Fatalf("diags: %+v", d)
 	}
 	e := decodeEntries(t, data.Multiagent)
@@ -297,7 +297,7 @@ func TestMapAgentResponseToDataSource_multiagent(t *testing.T) {
 		t.Fatalf("unexpected roster: %+v", e)
 	}
 
-	obj, d := mapAgentToDataSourceObject(agent)
+	obj, d := mapAgentToDataSourceObject(context.Background(), agent)
 	if d.HasError() {
 		t.Fatalf("diags: %+v", d)
 	}
@@ -307,7 +307,7 @@ func TestMapAgentResponseToDataSource_multiagent(t *testing.T) {
 
 	plain := apiAgentWithMultiagent(t, ``)
 	var pdata AgentDataSourceModel
-	if d := mapAgentResponseToDataSource(plain, &pdata); d.HasError() {
+	if d := mapAgentResponseToDataSource(context.Background(), plain, &pdata); d.HasError() {
 		t.Fatalf("diags: %+v", d)
 	}
 	if !pdata.Multiagent.IsNull() {
@@ -411,12 +411,12 @@ func TestMapAgentResponseToDataSource_multiagent20261001(t *testing.T) {
 		"claude-opus-4-6")
 
 	var data AgentDataSourceModel
-	if d := mapAgentResponseToDataSource(agent, &data); len(d) != 0 {
+	if d := mapAgentResponseToDataSource(context.Background(), agent, &data); len(d) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", d)
 	}
 	requireMultiagentEqual(t, data.Multiagent, want)
 
-	obj, d := mapAgentToDataSourceObject(agent)
+	obj, d := mapAgentToDataSourceObject(context.Background(), agent)
 	if len(d) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", d)
 	}
@@ -435,7 +435,7 @@ func TestMapMultiagentToObject_multiagent20261001Disabled(t *testing.T) {
 		"advisor":{"type":"disabled"},"subagents":{"type":"disabled"},"workflows":{"type":"disabled"}}`)
 	want := multiagent20261001Obj(t, memberObj(t, types.BoolValue(false), boolNull), memberObj(t, types.BoolValue(false), boolNull), "")
 
-	got, diags := mapMultiagentToObject(agent.Multiagent, agent.ID)
+	got, diags := mapMultiagentToObject(context.Background(), agent.Multiagent, agent.ID)
 	if len(diags) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", diags)
 	}
@@ -452,7 +452,7 @@ func TestMapMultiagentToObject_multiagent20261001Disabled(t *testing.T) {
 func TestMapMultiagentToObject_coordinatorHasNoWarning(t *testing.T) {
 	t.Parallel()
 	agent := apiAgentWithMultiagent(t, multiagentAPIRoster)
-	got, diags := mapMultiagentToObject(agent.Multiagent, agent.ID)
+	got, diags := mapMultiagentToObject(context.Background(), agent.Multiagent, agent.ID)
 	if len(diags) != 0 {
 		t.Fatalf("unexpected diagnostics: %+v", diags)
 	}
@@ -605,7 +605,7 @@ func TestMapMultiagentToState_typeSwitch(t *testing.T) {
 func TestMapMultiagentToObject_unknownTypeWarns(t *testing.T) {
 	t.Parallel()
 	agent := apiAgentWithMultiagent(t, `,"multiagent":{"type":"multiagent_20270101"}`)
-	got, d := mapMultiagentToObject(agent.Multiagent, agent.ID)
+	got, d := mapMultiagentToObject(context.Background(), agent.Multiagent, agent.ID)
 	if d.HasError() {
 		t.Fatalf("unexpected error: %+v", d)
 	}

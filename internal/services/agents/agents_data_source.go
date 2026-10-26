@@ -347,7 +347,7 @@ func (d *AgentsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	agentObjs := make([]attr.Value, 0)
 	for pager.Next() {
 		a := pager.Current()
-		obj, diags := mapAgentToDataSourceObject(&a)
+		obj, diags := mapAgentToDataSourceObject(ctx, &a)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -374,9 +374,9 @@ func (d *AgentsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 // value for inclusion in the agents list: the values of the anthropic_agent
 // data source (mapAgentResponseToDataSource), every config the API returns
 // included (no state-based filtering).
-func mapAgentToDataSourceObject(agent *anthropic.BetaManagedAgentsAgent) (attr.Value, diag.Diagnostics) {
+func mapAgentToDataSourceObject(ctx context.Context, agent *anthropic.BetaManagedAgentsAgent) (attr.Value, diag.Diagnostics) {
 	var data AgentDataSourceModel
-	diags := mapAgentResponseToDataSource(agent, &data)
+	diags := mapAgentResponseToDataSource(ctx, agent, &data)
 	obj, d := types.ObjectValue(agentListItemAttrTypes, map[string]attr.Value{
 		"id":                  data.ID,
 		"name":                data.Name,

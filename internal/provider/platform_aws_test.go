@@ -158,7 +158,7 @@ func verifySigV4(r *http.Request, body []byte, creds awssdk.Credentials, region 
 
 	// The request as the client signed it: same method, host, escaped path,
 	// query, signed headers and body length.
-	replay, err := http.NewRequest(r.Method, "http://"+r.Host+r.URL.RequestURI(), bytes.NewReader(body))
+	replay, err := http.NewRequestWithContext(r.Context(), r.Method, "http://"+r.Host+r.URL.RequestURI(), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func verifySigV4(r *http.Request, body []byte, creds awssdk.Credentials, region 
 		}
 	}
 	sum := sha256.Sum256(body)
-	if err := v4.NewSigner().SignHTTP(context.Background(), creds, replay, hex.EncodeToString(sum[:]), awsService, region, signingTime); err != nil {
+	if err := v4.NewSigner().SignHTTP(r.Context(), creds, replay, hex.EncodeToString(sum[:]), awsService, region, signingTime); err != nil {
 		return err
 	}
 	if got := replay.Header.Get("Authorization"); got != auth {

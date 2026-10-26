@@ -396,8 +396,8 @@ func (v *vaultCredentialConfigValidator) Description(_ context.Context) string {
 	return "Validates that the correct credential attributes are set for the given auth type."
 }
 
-func (v *vaultCredentialConfigValidator) MarkdownDescription(_ context.Context) string {
-	return v.Description(context.Background())
+func (v *vaultCredentialConfigValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
 }
 
 func (v *vaultCredentialConfigValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {

@@ -807,7 +807,7 @@ func TestMapToolConfigsToState_autoDefault(t *testing.T) {
 		"default_config":{"enabled":true,"permission_policy":{"type":"auto"}},
 		"configs":[{"type":"bash","name":"bash","enabled":true,"permission_policy":{"type":"auto"}}]}]`)
 	var ds AgentDataSourceModel
-	if diags := mapAgentResponseToDataSource(agent, &ds); diags.HasError() {
+	if diags := mapAgentResponseToDataSource(context.Background(), agent, &ds); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	var toolset agentToolsetModel
@@ -1421,7 +1421,7 @@ func TestMapAgentResponseToState_modelSpeed(t *testing.T) {
 			`{"id":"m"}`:                types.StringNull(),
 		} {
 			var data AgentDataSourceModel
-			if diags := mapAgentResponseToDataSource(parseAgentFixture(t, model), &data); diags.HasError() {
+			if diags := mapAgentResponseToDataSource(context.Background(), parseAgentFixture(t, model), &data); diags.HasError() {
 				t.Fatalf("diags: %+v", diags)
 			}
 			if !data.ModelSpeed.Equal(want) {

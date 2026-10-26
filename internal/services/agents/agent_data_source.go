@@ -284,7 +284,7 @@ func (d *AgentDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	resp.Diagnostics.Append(mapAgentResponseToDataSource(agent, &data)...)
+	resp.Diagnostics.Append(mapAgentResponseToDataSource(ctx, agent, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -294,7 +294,7 @@ func (d *AgentDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 
 // mapAgentResponseToDataSource maps an API agent response to the data source model.
 // Unlike the resource mapper, it emits all API-returned configs as-is (no state filtering).
-func mapAgentResponseToDataSource(agent *anthropic.BetaManagedAgentsAgent, data *AgentDataSourceModel) diag.Diagnostics {
+func mapAgentResponseToDataSource(ctx context.Context, agent *anthropic.BetaManagedAgentsAgent, data *AgentDataSourceModel) diag.Diagnostics {
 	data.ID = types.StringValue(agent.ID)
 	data.Name = types.StringValue(agent.Name)
 	data.Model = types.StringValue(agent.Model.ID)
@@ -326,7 +326,7 @@ func mapAgentResponseToDataSource(agent *anthropic.BetaManagedAgentsAgent, data 
 	diags.Append(d...)
 
 	// Multiagent (verbatim from the API)
-	data.Multiagent, d = mapMultiagentToObject(agent.Multiagent, agent.ID)
+	data.Multiagent, d = mapMultiagentToObject(ctx, agent.Multiagent, agent.ID)
 	diags.Append(d...)
 
 	// Execution identity (verbatim from the API, `service_account` included)

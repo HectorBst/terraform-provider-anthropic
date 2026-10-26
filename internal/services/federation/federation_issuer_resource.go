@@ -289,8 +289,8 @@ func (v *federationIssuerConfigValidator) Description(_ context.Context) string 
 	return "Validates that the correct jwks attributes are set for the given jwks.type."
 }
 
-func (v *federationIssuerConfigValidator) MarkdownDescription(_ context.Context) string {
-	return v.Description(context.Background())
+func (v *federationIssuerConfigValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
 }
 
 func (v *federationIssuerConfigValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {

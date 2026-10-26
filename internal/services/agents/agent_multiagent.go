@@ -863,9 +863,9 @@ func predefinedAgentAPIValue(a multiagentRosterEntry) (attr.Value, diag.Diagnost
 // data sources). The API resolves a "self" entry into an "agent" entry carrying
 // the owner's own ID, so a self entry cannot be told apart from an explicit
 // reference here.
-func mapMultiagentToObject(ma anthropic.BetaManagedAgentsMultiagentUnion, ownerID string) (types.Object, diag.Diagnostics) {
+func mapMultiagentToObject(ctx context.Context, ma anthropic.BetaManagedAgentsMultiagentUnion, ownerID string) (types.Object, diag.Diagnostics) {
 	if ma.Type == multiagentType20261001 {
-		return mapMultiagent20261001(context.Background(), ma, ownerID, types.ObjectNull(agentMultiagentAttrTypes), true)
+		return mapMultiagent20261001(ctx, ma, ownerID, types.ObjectNull(agentMultiagentAttrTypes), true)
 	}
 	roster, present, diags := multiagentRosterFromAPI(ma, ownerID)
 	if !present {

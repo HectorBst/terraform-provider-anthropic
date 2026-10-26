@@ -131,7 +131,7 @@ func TestMapAgentToDataSources_executionIdentity(t *testing.T) {
 
 	agent := apiAgentWithMultiagent(t, `,"execution_identity":{"type":"service_account"}`)
 	var data AgentDataSourceModel
-	if diags := mapAgentResponseToDataSource(agent, &data); diags.HasError() {
+	if diags := mapAgentResponseToDataSource(context.Background(), agent, &data); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	want := executionIdentity("service_account", types.StringNull())
@@ -140,7 +140,7 @@ func TestMapAgentToDataSources_executionIdentity(t *testing.T) {
 	}
 
 	agent = apiAgentWithMultiagent(t, `,"execution_identity":{"type":"aws_role","role_arn":"`+testRoleARN+`"}`)
-	obj, diags := mapAgentToDataSourceObject(agent)
+	obj, diags := mapAgentToDataSourceObject(context.Background(), agent)
 	if diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}

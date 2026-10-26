@@ -107,7 +107,7 @@ func newFakeGoogleGateway(t *testing.T) *fakeGoogleGateway {
 	g := &fakeGoogleGateway{}
 	g.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		g.mu.Lock()
-		g.reqs = append(g.reqs, r.Clone(context.Background()))
+		g.reqs = append(g.reqs, r.Clone(r.Context()))
 		g.mu.Unlock()
 		jsonResponse(w, 200, `{"id":"x","type":"model","data":[],"has_more":false}`)
 	}))

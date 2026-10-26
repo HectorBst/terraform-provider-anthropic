@@ -554,7 +554,7 @@ func TestMapAgentToolsetToState_urlSources(t *testing.T) {
 		"configs":[{"type":"web_fetch","name":"web_fetch","enabled":true,"permission_policy":{"type":"always_allow"},
 			"url_sources":{"user_input":null,"client_tool_results":{"type":"none"},"server_tool_results":{"type":"only","tools":[{"type":"tool_reference","name":"web_search"}]}}}]}]`)
 	var ds AgentDataSourceModel
-	if diags := mapAgentResponseToDataSource(agent, &ds); diags.HasError() {
+	if diags := mapAgentResponseToDataSource(context.Background(), agent, &ds); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	got := agentToolConfigsFromToolset(t, ds.AgentToolset)
@@ -688,7 +688,7 @@ func TestMapAgentToDataSources_webOptions(t *testing.T) {
 			{"type":"bash","name":"bash","enabled":false,"permission_policy":{"type":"always_ask"}}]}]`)
 
 	var data AgentDataSourceModel
-	if diags := mapAgentResponseToDataSource(agent, &data); diags.HasError() {
+	if diags := mapAgentResponseToDataSource(context.Background(), agent, &data); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	got := agentToolConfigsFromToolset(t, data.AgentToolset)
@@ -704,7 +704,7 @@ func TestMapAgentToDataSources_webOptions(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 
-	obj, diags := mapAgentToDataSourceObject(agent)
+	obj, diags := mapAgentToDataSourceObject(context.Background(), agent)
 	if diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
