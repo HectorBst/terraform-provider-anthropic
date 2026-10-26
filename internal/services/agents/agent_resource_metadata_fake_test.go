@@ -19,10 +19,12 @@ import (
 )
 
 // agentUpdateBody is the body the provider sends to update the agent of
-// agentConfig at version, with metadataPatch and extra JSON members.
+// agentConfig at version, with metadataPatch and extra JSON members. The
+// effort is the default the API resolved on create, which the plan keeps
+// while the model is unchanged.
 func agentUpdateBody(version int, metadataPatch, extra string) string {
 	return fmt.Sprintf(`{"name":"test-agent","description":"","system":"","version":%d,`+
-		`"model":{"id":"claude-sonnet-4-6"},"mcp_servers":[],"skills":[],"tools":[],"metadata":%s%s}`,
+		`"model":{"id":"claude-sonnet-4-6","effort":"high"},"mcp_servers":[],"skills":[],"tools":[],"metadata":%s%s}`,
 		version, metadataPatch, extra)
 }
 

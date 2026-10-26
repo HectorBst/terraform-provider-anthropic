@@ -176,6 +176,23 @@ func TestMapMultiagentToState_explicitOwnerReferenceIsNotSelf(t *testing.T) {
 	}
 }
 
+// A self entry is correlated after the explicit references, whatever the
+// order: listed first, it still does not take the entry an explicit
+// reference to the owner's own ID names.
+func TestMapMultiagentToState_selfAfterExplicitReferences(t *testing.T) {
+	t.Parallel()
+	agent := apiAgentWithMultiagent(t, `,"multiagent":{"type":"coordinator","agents":[{"type":"agent","id":"agent_owner","version":2}]}`)
+	prior := multiagentObj(t,
+		multiagentEntryObj(t, "self", types.StringNull(), types.Int64Null(), types.StringNull()),
+		multiagentEntryObj(t, "agent", types.StringValue("agent_owner"), types.Int64Unknown(), types.StringNull()))
+	got, diags := mapMultiagentToState(context.Background(), agent.Multiagent, agent.ID, prior)
+	if diags.HasError() {
+		t.Fatalf("diags: %+v", diags)
+	}
+	want := multiagentObj(t, multiagentEntryObj(t, "agent", types.StringValue("agent_owner"), types.Int64Value(2), types.StringNull()))
+	requireMultiagentEqual(t, got, want)
+}
+
 func TestMapMultiagentToState_driftAndRemoval(t *testing.T) {
 	t.Parallel()
 	agent := apiAgentWithMultiagent(t, multiagentAPIRoster)
