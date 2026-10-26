@@ -13,7 +13,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/googlecloud"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -118,23 +117,9 @@ type googleCloudSettings struct {
 func resolveGoogleCloud(ctx context.Context, data AnthropicProviderModel) (*googleCloudSettings, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	// Configured values: see resolveAWS. aws is checked by Configure.
-	for _, other := range []struct {
-		name  string
-		value attr.Value
-	}{
-		{"api_key", data.ApiKey},
-		{"admin_api_key", data.AdminApiKey},
-		{"auth_token", data.AuthToken},
-		{"federation", data.Federation},
-	} {
-		if !other.value.IsNull() {
-			diags.AddAttributeError(path.Root("google_cloud"), "Conflicting Platform Configuration",
-				fmt.Sprintf("google_cloud and %s cannot both be set: the google_cloud block reaches Claude Models on "+
-					"Google Cloud with Google credentials, where no Anthropic credential is accepted. Use a separate "+
-					"provider alias for each organization.", other.name))
-		}
-	}
+	// Configured values: see firstPartyConflicts. aws is checked by
+	// Configure.
+	diags.Append(firstPartyConflicts(data, "google_cloud", "Claude Models on Google Cloud with Google credentials")...)
 	if diags.HasError() {
 		return nil, diags
 	}
@@ -153,21 +138,13 @@ func resolveGoogleCloud(ctx context.Context, data AnthropicProviderModel) (*goog
 	// Unknown is an error, not unset: an unknown access_token would fall back
 	// to Application Default Credentials, another identity, and an unknown
 	// project to the environment's.
-	for _, a := range []struct {
-		name  string
-		value types.String
-	}{
+	diags.Append(unknownBlockAttributes("google_cloud", "Unknown Google Cloud Configuration", []namedString{
 		{"project", m.Project},
 		{"location", m.Location},
 		{"credentials", m.Credentials},
 		{"access_token", m.AccessToken},
 		{"base_url", m.BaseURL},
-	} {
-		if a.value.IsUnknown() {
-			diags.AddAttributeError(path.Root("google_cloud").AtName(a.name), "Unknown Google Cloud Configuration",
-				fmt.Sprintf("google_cloud.%s depends on a value that is not known until apply. Provider configuration must be known at plan time.", a.name))
-		}
-	}
+	})...)
 	if diags.HasError() {
 		return nil, diags
 	}
