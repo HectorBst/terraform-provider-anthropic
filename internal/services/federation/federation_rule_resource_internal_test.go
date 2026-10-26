@@ -355,6 +355,7 @@ func targetObject(t *testing.T, serviceAccountID string) types.Object {
 }
 
 func baseValidModel(t *testing.T) FederationRuleResourceModel {
+	t.Helper()
 	return FederationRuleResourceModel{
 		Name:        types.StringValue("gha-deploy"),
 		IssuerID:    types.StringValue("fdis_01XYZ"),

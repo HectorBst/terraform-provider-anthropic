@@ -119,6 +119,7 @@ func TestPlatformBetaWarning(t *testing.T) {
 		{
 			name: "first party, platform variables exported",
 			setup: func(t *testing.T) {
+				t.Helper()
 				t.Setenv("ANTHROPIC_GOOGLE_CLOUD_PROJECT", gcTestProject)
 				t.Setenv("ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID", gcTestWorkspace)
 				t.Setenv("AWS_REGION", awsTestRegion)

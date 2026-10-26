@@ -753,21 +753,21 @@ func TestVaultCredentialConfigValidator_InjectionLocation(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		value   func(t *testing.T) tftypes.Value
+		value   tftypes.Value
 		wantErr bool
 	}{
-		{"omitted", func(*testing.T) tftypes.Value { return tftypes.NewValue(ilType, nil) }, false},
-		{"header only", func(t *testing.T) tftypes.Value { return injectionLocationRaw(t, true, nil) }, false},
-		{"body only", func(t *testing.T) tftypes.Value { return injectionLocationRaw(t, false, true) }, false},
-		{"both false", func(t *testing.T) tftypes.Value { return injectionLocationRaw(t, false, false) }, true},
-		{"empty block, both default to false", func(t *testing.T) tftypes.Value { return injectionLocationRaw(t, nil, nil) }, true},
-		{"false and unknown", func(t *testing.T) tftypes.Value { return injectionLocationRaw(t, false, tftypes.UnknownValue) }, false},
-		{"unknown block", func(*testing.T) tftypes.Value { return tftypes.NewValue(ilType, tftypes.UnknownValue) }, false},
+		{"omitted", tftypes.NewValue(ilType, nil), false},
+		{"header only", injectionLocationRaw(t, true, nil), false},
+		{"body only", injectionLocationRaw(t, false, true), false},
+		{"both false", injectionLocationRaw(t, false, false), true},
+		{"empty block, both default to false", injectionLocationRaw(t, nil, nil), true},
+		{"false and unknown", injectionLocationRaw(t, false, tftypes.UnknownValue), false},
+		{"unknown block", tftypes.NewValue(ilType, tftypes.UnknownValue), false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			resp := validateConfig(t, envVarConfigVals(t, tc.value(t)))
+			resp := validateConfig(t, envVarConfigVals(t, tc.value))
 			if got := hasErrorDetail(resp.Diagnostics, invalidInjectionLocationDetail); got != tc.wantErr {
 				t.Errorf("injection location error = %v, want %v; diags: %v", got, tc.wantErr, resp.Diagnostics)
 			}

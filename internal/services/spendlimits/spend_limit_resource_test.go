@@ -25,6 +25,7 @@ import (
 // deletes, the daily limit of the organization's first member, adopting any
 // daily override it already had.
 func preCheckSpendLimitsAcc(t *testing.T) {
+	t.Helper()
 	acctest.PreCheckAdmin(t)
 	if os.Getenv("ANTHROPIC_SPEND_LIMITS_ACC") == "" {
 		t.Skip("skipping: ANTHROPIC_SPEND_LIMITS_ACC is not set. Spend limits need a Claude Enterprise organization " +

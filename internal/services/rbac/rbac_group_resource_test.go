@@ -23,6 +23,7 @@ import (
 // ANTHROPIC_ENTERPRISE_ACC=1 with an Enterprise key created for all linked
 // organizations (read:/write:rbac_groups, read:members) to run them live.
 func preCheckEnterpriseAcc(t *testing.T) {
+	t.Helper()
 	acctest.PreCheckAdmin(t)
 	if os.Getenv("ANTHROPIC_ENTERPRISE_ACC") == "" {
 		t.Skip("skipping: ANTHROPIC_ENTERPRISE_ACC is not set. The RBAC endpoints are Claude Enterprise only and " +

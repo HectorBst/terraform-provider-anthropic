@@ -387,6 +387,7 @@ func runUpdate(t *testing.T, state, plan TelemetryDestinationResourceModel, head
 }
 
 func okDestination(t *testing.T) func(recordedRequest) (int, string) {
+	t.Helper()
 	return func(recordedRequest) (int, string) { return http.StatusOK, destinationJSON(t, nil) }
 }
 

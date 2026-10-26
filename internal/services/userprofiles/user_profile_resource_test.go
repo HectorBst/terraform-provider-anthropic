@@ -28,6 +28,7 @@ import (
 // they are gated behind an explicit opt-in on top of the usual PreCheck, and
 // CI (which does not set it) always skips them.
 func preCheckUserProfilesAcc(t *testing.T) {
+	t.Helper()
 	acctest.PreCheck(t)
 	if os.Getenv("ANTHROPIC_USER_PROFILES_ACC") == "" {
 		t.Skip("skipping: ANTHROPIC_USER_PROFILES_ACC is not set. The user profiles beta returns 404 for " +

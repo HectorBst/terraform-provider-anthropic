@@ -19,6 +19,7 @@ import (
 // (which does not set it) skips it. Pagination and mapping stay covered by the
 // httptest-based unit tests.
 func preCheckCMEKAcc(t *testing.T) {
+	t.Helper()
 	acctest.PreCheckAdmin(t)
 	if os.Getenv("ANTHROPIC_CMEK_ACC") == "" {
 		t.Skip("skipping: ANTHROPIC_CMEK_ACC is not set. Set it to read the external keys of an organization that has CMEK turned on.")

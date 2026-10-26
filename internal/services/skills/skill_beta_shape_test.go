@@ -187,6 +187,7 @@ type multipartCapture struct {
 
 // handler records the request's multipart form, then answers body.
 func (c *multipartCapture) handler(t *testing.T, body string) http.HandlerFunc {
+	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
 		fields, files := multipartParts(t, r)
 		c.mu.Lock()

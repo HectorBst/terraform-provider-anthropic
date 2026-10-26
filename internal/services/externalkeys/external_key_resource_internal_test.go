@@ -342,8 +342,8 @@ func TestBuildExternalKeyUpdateBody(t *testing.T) {
 	ctx := context.Background()
 	str, null, unknown := types.StringValue, types.StringNull(), types.StringUnknown()
 
-	pcObj := func(t *testing.T, m externalKeyProviderConfigModel) types.Object {
-		t.Helper()
+	// The models are built before the subtests, with the parent test's t.
+	pcObj := func(m externalKeyProviderConfigModel) types.Object {
 		obj, diags := types.ObjectValueFrom(ctx, providerConfigAttrTypes, m)
 		if diags.HasError() {
 			t.Fatal(diags)
@@ -355,8 +355,8 @@ func TestBuildExternalKeyUpdateBody(t *testing.T) {
 	azurePC := externalKeyProviderConfigModel{Type: str("azure"), KMSARN: null, Region: null, KeyName: str("k"),
 		VaultURI: str("https://v.vault.azure.net"), TenantID: str("tenant"), ClientID: str("app")}
 
-	base := func(t *testing.T, display types.String, pc externalKeyProviderConfigModel) ExternalKeyModel {
-		return ExternalKeyModel{ID: str(testKeyID), DisplayName: display, Geo: str("us"), ProviderConfig: pcObj(t, pc)}
+	base := func(display types.String, pc externalKeyProviderConfigModel) ExternalKeyModel {
+		return ExternalKeyModel{ID: str(testKeyID), DisplayName: display, Geo: str("us"), ProviderConfig: pcObj(pc)}
 	}
 
 	newARN := awsPC
@@ -369,56 +369,56 @@ func TestBuildExternalKeyUpdateBody(t *testing.T) {
 
 	cases := []struct {
 		name        string
-		plan, state func(t *testing.T) ExternalKeyModel
+		plan, state ExternalKeyModel
 		want        string
 	}{
 		{
 			"no change sends an empty body",
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), awsPC) },
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), awsPC) },
+			base(str("a"), awsPC),
+			base(str("a"), awsPC),
 			`{}`,
 		},
 		{
 			"display_name removed is cleared with null",
-			func(t *testing.T) ExternalKeyModel { return base(t, null, awsPC) },
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), awsPC) },
+			base(null, awsPC),
+			base(str("a"), awsPC),
 			`{"display_name":null}`,
 		},
 		{
 			"new kms_arn resends provider_config without the unknown region",
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), newARN) },
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), awsPC) },
+			base(str("a"), newARN),
+			base(str("a"), awsPC),
 			`{"provider_config":{"kms_arn":"arn:aws:kms:us-west-2:111122223333:key/other","type":"aws"}}`,
 		},
 		{
 			"client_id removed is cleared with null",
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), noClient) },
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), azurePC) },
+			base(str("a"), noClient),
+			base(str("a"), azurePC),
 			`{"provider_config":{"client_id":null,"key_name":"k","tenant_id":"tenant","type":"azure","vault_uri":"https://v.vault.azure.net"}}`,
 		},
 		{
 			"provider switch on an unattached key",
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), noClient) },
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), awsPC) },
+			base(str("a"), noClient),
+			base(str("a"), awsPC),
 			`{"provider_config":{"key_name":"k","tenant_id":"tenant","type":"azure","vault_uri":"https://v.vault.azure.net"}}`,
 		},
 		{
 			// client_id belongs to the azure member only: no null for it in a gcp body.
 			"switch from azure with client_id to gcp",
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), gcpPC) },
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), azurePC) },
+			base(str("a"), gcpPC),
+			base(str("a"), azurePC),
 			`{"provider_config":{"key_name":"projects/p/locations/l/keyRings/r/cryptoKeys/k","type":"gcp"}}`,
 		},
 		{
 			"switch from azure with client_id to aws",
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), newARN) },
-			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), azurePC) },
+			base(str("a"), newARN),
+			base(str("a"), azurePC),
 			`{"provider_config":{"kms_arn":"arn:aws:kms:us-west-2:111122223333:key/other","type":"aws"}}`,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, diags := buildExternalKeyUpdateBody(ctx, tc.plan(t), tc.state(t))
+			body, diags := buildExternalKeyUpdateBody(ctx, tc.plan, tc.state)
 			if diags.HasError() {
 				t.Fatal(diags)
 			}

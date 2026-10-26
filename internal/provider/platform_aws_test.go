@@ -349,15 +349,19 @@ func TestConfigureAWSCredentialSources(t *testing.T) {
 			wantKey: "aws-console-key",
 		},
 		{
-			name:    "ANTHROPIC_AWS_API_KEY",
-			block:   map[string]any{"region": awsTestRegion},
-			setup:   func(t *testing.T) { t.Setenv("ANTHROPIC_AWS_API_KEY", "aws-console-key-env") },
+			name:  "ANTHROPIC_AWS_API_KEY",
+			block: map[string]any{"region": awsTestRegion},
+			setup: func(t *testing.T) {
+				t.Helper()
+				t.Setenv("ANTHROPIC_AWS_API_KEY", "aws-console-key-env")
+			},
 			wantKey: "aws-console-key-env",
 		},
 		{
 			name:  "profile",
 			block: map[string]any{"region": awsTestRegion, "profile": "platform-admin"},
 			setup: func(t *testing.T) {
+				t.Helper()
 				writeFile(t, os.Getenv("AWS_SHARED_CREDENTIALS_FILE"), fmt.Sprintf(
 					"[default]\naws_access_key_id = AKIADEFAULTWRONG\naws_secret_access_key = wrong\n\n"+
 						"[platform-admin]\naws_access_key_id = %s\naws_secret_access_key = %s\n", awsTestAccessKey, awsTestSecretKey))
@@ -367,6 +371,7 @@ func TestConfigureAWSCredentialSources(t *testing.T) {
 			name:  "default chain",
 			block: map[string]any{},
 			setup: func(t *testing.T) {
+				t.Helper()
 				t.Setenv("AWS_REGION", awsTestRegion)
 				t.Setenv("AWS_ACCESS_KEY_ID", awsTestAccessKey)
 				t.Setenv("AWS_SECRET_ACCESS_KEY", awsTestSecretKey)
