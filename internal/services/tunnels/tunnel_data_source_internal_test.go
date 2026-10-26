@@ -11,6 +11,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/ippontech/terraform-provider-anthropic/internal/oauthtest"
+	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
 func TestTunnelDataSource_Read(t *testing.T) {
@@ -26,7 +27,7 @@ func TestTunnelDataSource_Read(t *testing.T) {
 	}
 
 	reqs := log.all()
-	if len(reqs) != 1 || !strings.Contains(reqs[0].Beta, "mcp-tunnels-2026-06-22") || reqs[0].Auth != "Bearer test" {
+	if len(reqs) != 1 || !strings.Contains(reqs[0].Beta, "mcp-tunnels-2026-06-22") || reqs[0].Auth != "Bearer "+sdktest.TestAuthToken {
 		t.Errorf("requests = %+v, want one GET with the tunnels beta header and the bearer token", reqs)
 	}
 
