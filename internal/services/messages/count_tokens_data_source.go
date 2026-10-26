@@ -5,7 +5,6 @@ package messages
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -271,31 +270,12 @@ func (countTokensThinkingValidator) ValidateDataSource(ctx context.Context, req 
 	}
 }
 
-// buildCountTokensParams converts the data source model into SDK request params.
+// buildCountTokensParams converts the data source model into SDK request
+// params. The first error stops it.
 func buildCountTokensParams(ctx context.Context, data CountTokensDataSourceModel) (anthropic.MessageCountTokensParams, diag.Diagnostics) {
-	var diags diag.Diagnostics
-
-	var msgModels []MessageParamModel
-	diags.Append(data.Messages.ElementsAs(ctx, &msgModels, false)...)
+	sdkMessages, diags := decodeMessages[MessageParamModel](ctx, data.Messages)
 	if diags.HasError() {
 		return anthropic.MessageCountTokensParams{}, diags
-	}
-
-	sdkMessages := make([]anthropic.MessageParam, len(msgModels))
-	for i, m := range msgModels {
-		block := anthropic.NewTextBlock(m.Content.ValueString())
-		switch m.Role.ValueString() {
-		case "user":
-			sdkMessages[i] = anthropic.NewUserMessage(block)
-		case "assistant":
-			sdkMessages[i] = anthropic.NewAssistantMessage(block)
-		default:
-			diags.AddError(
-				"Invalid Message Role",
-				fmt.Sprintf("Message at index %d has invalid role %q; must be \"user\" or \"assistant\".", i, m.Role.ValueString()),
-			)
-			return anthropic.MessageCountTokensParams{}, diags
-		}
 	}
 
 	params := anthropic.MessageCountTokensParams{
@@ -303,7 +283,7 @@ func buildCountTokensParams(ctx context.Context, data CountTokensDataSourceModel
 		Messages: sdkMessages,
 	}
 
-	if !data.System.IsNull() && !data.System.IsUnknown() {
+	if isKnownString(data.System) {
 		params.System = anthropic.MessageCountTokensParamsSystemUnion{
 			OfString: anthropic.String(data.System.ValueString()),
 		}
@@ -313,72 +293,74 @@ func buildCountTokensParams(ctx context.Context, data CountTokensDataSourceModel
 		params.Speed = anthropic.MessageCountTokensParamsSpeed(data.Speed.ValueString())
 	}
 
-	if !data.Thinking.IsNull() && !data.Thinking.IsUnknown() {
-		var t countTokensThinkingModel
-		diags.Append(data.Thinking.As(ctx, &t, objectAsOptions)...)
+	if isKnown(data.Thinking) {
+		thinking, d := countTokensThinkingParam(ctx, data.Thinking)
+		diags.Append(d...)
 		if diags.HasError() {
 			return params, diags
 		}
-		switch t.Type.ValueString() {
-		case "enabled":
-			cfg := anthropic.ThinkingConfigEnabledParam{BudgetTokens: t.BudgetTokens.ValueInt64()}
-			if !t.Display.IsNull() {
-				cfg.Display = anthropic.ThinkingConfigEnabledDisplay(t.Display.ValueString())
-			}
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfEnabled: &cfg}
-		case "disabled":
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfDisabled: &anthropic.ThinkingConfigDisabledParam{}}
-		case "between_tools":
-			betweenTools := anthropic.NewThinkingConfigBetweenToolsParam()
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfBetweenTools: &betweenTools}
-		case "adaptive":
-			cfg := anthropic.ThinkingConfigAdaptiveParam{}
-			if !t.Display.IsNull() {
-				cfg.Display = anthropic.ThinkingConfigAdaptiveDisplay(t.Display.ValueString())
-			}
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfAdaptive: &cfg}
-		default:
-			diags.AddAttributeError(path.Root("thinking").AtName("type"), "Invalid thinking type",
-				fmt.Sprintf("Unsupported thinking type %q.", t.Type.ValueString()))
-			return params, diags
-		}
+		params.Thinking = thinking
 	}
 
-	if !data.OutputConfig.IsNull() && !data.OutputConfig.IsUnknown() {
-		var o countTokensOutputConfigModel
-		diags.Append(data.OutputConfig.As(ctx, &o, objectAsOptions)...)
+	if isKnown(data.OutputConfig) {
+		outputConfig, d := countTokensOutputConfigParam(ctx, data.OutputConfig)
+		diags.Append(d...)
 		if diags.HasError() {
 			return params, diags
 		}
-		if !o.Effort.IsNull() {
-			params.OutputConfig.Effort = anthropic.OutputConfigEffort(o.Effort.ValueString())
-		}
-		if !o.Format.IsNull() && !o.Format.IsUnknown() {
-			var schemaObj map[string]any
-			if err := json.Unmarshal([]byte(o.Format.ValueString()), &schemaObj); err != nil || schemaObj == nil {
-				diags.AddAttributeError(path.Root("output_config").AtName("format"), "Invalid format",
-					fmt.Sprintf("`format` must be a JSON object holding a JSON schema: %v", err))
-				return params, diags
-			}
-			params.OutputConfig.Format = anthropic.JSONOutputFormatParam{Schema: schemaObj}
-		}
+		params.OutputConfig = outputConfig
 	}
 
-	if !data.CacheControl.IsNull() && !data.CacheControl.IsUnknown() {
+	if isKnown(data.CacheControl) {
 		var c countTokensCacheControlModel
 		diags.Append(data.CacheControl.As(ctx, &c, objectAsOptions)...)
 		if diags.HasError() {
 			return params, diags
 		}
-		// Type is set explicitly: a zero-valued CacheControlEphemeralParam is
-		// dropped by the SDK's omitzero, so `cache_control = {}` (no ttl) would
-		// otherwise never reach the API (same trap as anthropic_message).
-		cc := anthropic.CacheControlEphemeralParam{Type: "ephemeral"}
-		if !c.TTL.IsNull() {
-			cc.TTL = anthropic.CacheControlEphemeralTTL(c.TTL.ValueString())
-		}
-		params.CacheControl = cc
+		// cacheControlParam sets the type explicitly, so `cache_control = {}`
+		// (no ttl) still reaches the API (same trap as anthropic_message).
+		params.CacheControl = cacheControlParam(&CacheControlModel{TTL: c.TTL})
 	}
 
 	return params, diags
+}
+
+// countTokensThinkingParam reads the `thinking` block into the SDK union.
+func countTokensThinkingParam(ctx context.Context, obj types.Object) (anthropic.ThinkingConfigParamUnion, diag.Diagnostics) {
+	var t countTokensThinkingModel
+	diags := obj.As(ctx, &t, objectAsOptions)
+	if diags.HasError() {
+		return anthropic.ThinkingConfigParamUnion{}, diags
+	}
+	thinking, ok := thinkingParam(t.Type.ValueString(), t.BudgetTokens, t.Display)
+	if !ok {
+		diags.AddAttributeError(path.Root("thinking").AtName("type"), "Invalid thinking type",
+			fmt.Sprintf("Unsupported thinking type %q.", t.Type.ValueString()))
+	}
+	return thinking, diags
+}
+
+// countTokensOutputConfigParam reads the `output_config` block: the effort,
+// and the format wrapped as a json_schema output format. A format that is
+// not a JSON object, JSON null included, is an error.
+func countTokensOutputConfigParam(ctx context.Context, obj types.Object) (anthropic.OutputConfigParam, diag.Diagnostics) {
+	var o countTokensOutputConfigModel
+	diags := obj.As(ctx, &o, objectAsOptions)
+	if diags.HasError() {
+		return anthropic.OutputConfigParam{}, diags
+	}
+	oc := anthropic.OutputConfigParam{}
+	if !o.Effort.IsNull() {
+		oc.Effort = anthropic.OutputConfigEffort(o.Effort.ValueString())
+	}
+	if isKnown(o.Format) {
+		schemaObj, err := formatSchema(o.Format)
+		if err != nil || schemaObj == nil {
+			diags.AddAttributeError(path.Root("output_config").AtName("format"), "Invalid format",
+				fmt.Sprintf("`format` must be a JSON object holding a JSON schema: %v", err))
+			return oc, diags
+		}
+		oc.Format = anthropic.JSONOutputFormatParam{Schema: schemaObj}
+	}
+	return oc, diags
 }
