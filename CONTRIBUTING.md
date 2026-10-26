@@ -105,7 +105,7 @@ The cognitive complexity of a function is capped at 20, in the non-test Go files
 - a new function, or one that scored 20 or less there, must score 20 or less;
 - a function that already scored more there may change, as long as its score does not rise. When you have to change one, put the new logic in a helper.
 
-Nothing is committed: the functions above 20 are simply those above it on `main`, so once none is left, the cap is absolute. The job summary lists the functions your change concerns, with their scores before and after. Scores are those of gocognit as golangci-lint computes them; `//gocognit:ignore` and `//nolint` do not exempt a function.
+Nothing is committed: the functions above 20 are simply those above it on `main`, and none is left, so the cap is absolute. The job summary lists the functions your change concerns, with their scores before and after. Scores are those of gocognit as golangci-lint computes them; `//gocognit:ignore` and `//nolint` do not exempt a function.
 
 ### Run unit tests
 

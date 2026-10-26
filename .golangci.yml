@@ -2,10 +2,10 @@
 # is pinned in .github/workflows/provider.yml, the local one in mise.toml).
 #
 # Only code that differs from origin/main is reported (issues.new-from-merge-base):
-# the existing code has about 250 findings under this configuration, and a pull
-# request must not fail on lines it never touched. Remove that setting once the
-# existing code has been brought up to date in one mechanical pull request, and
-# the 20 gocognit findings by the refactoring lot (see gocognit below).
+# the existing code has about 440 findings under this configuration (none from
+# gocognit since the refactoring lot), and a pull request must not fail on lines
+# it never touched. Remove that setting once the existing code has been brought
+# up to date in one mechanical pull request.
 #
 # The setting filters every linter, so `make lint` and the CI lint job also run
 # `golangci-lint run --no-config`: the standard linters on the whole tree, as
@@ -40,17 +40,13 @@ linters:
     gocognit:
       # Cognitive complexity of at most 20 for production code. Tests and the
       # test-helper packages are left out (exclusions below): table-driven tests
-      # read better long. The plan:
-      # - now, for new code: in new-code mode a finding counts when the change
-      #   adds or edits its line, the `func` line, so this reports new functions
-      #   above 20 (and an existing one whose signature a change edits);
-      # - the 20 existing functions above 20 are guarded by the complexity
-      #   ratchet (`make complexity`, CI job `complexity`), computed against the
-      #   merge base with nothing committed: a function above 20 there may be
-      #   touched only if its score does not rise, and every other function must
-      #   stay at 20 or less, whichever lines the change edits;
-      # - once the refactoring lot has brought them under 20, no function on
-      #   main scores above 20 and the same ratchet is an absolute cap.
+      # read better long. In new-code mode a finding counts when the change adds
+      # or edits its line, the `func` line, so this reports new functions above
+      # 20 (and an existing one whose signature a change edits). The complexity
+      # ratchet (`make complexity`, CI job `complexity`) checks every function,
+      # whichever lines the change edits, against the merge base; since the
+      # refactoring lot no function on main scores above 20, so it is an
+      # absolute cap of 20.
       min-complexity: 20
     exhaustive:
       default-signifies-exhaustive: true
