@@ -37,6 +37,10 @@ With the provider's `aws` block, the workspace is managed through the Claude Pla
 - `data_residency.workspace_geo` is not configurable on this platform ([data residency](https://platform.claude.com/docs/en/manage-claude/data-residency)); leave it unset. `allowed_inference_geos` and `default_inference_geo` work as on the Claude API.
 - Whether `tags` relate to the AWS resource tags of the workspace ARN is not documented; they are sent as on the Claude API.
 
+## Claude Models on Google Cloud
+
+Not available with the provider's `google_cloud` block: on Claude Models on Google Cloud (Anthropic managed), workspaces are created, renamed and archived in the Claude Console only (Settings > Workspaces), and the gateway serves no workspace route. Planning this resource there fails with an error naming the platform.
+
 {{ .SchemaMarkdown | trimspace }}
 
 ## Import
