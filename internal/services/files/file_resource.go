@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -228,7 +229,7 @@ func (r *FileResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	file, err := r.client.Files.GetMetadata(ctx, data.ID.ValueString(), anthropic.FileGetMetadataParams{})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -257,7 +258,7 @@ func (r *FileResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	_, err := r.client.Files.Delete(ctx, data.ID.ValueString(), anthropic.FileDeleteParams{})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			// Already gone — treat as success.
 			return
 		}

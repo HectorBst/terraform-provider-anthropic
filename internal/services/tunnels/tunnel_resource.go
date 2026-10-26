@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -382,5 +383,5 @@ func (m tokenFollowsRotationModifier) PlanModifyString(ctx context.Context, req 
 // isNotFound reports whether err is an API 404.
 func isNotFound(err error) bool {
 	var apierr *anthropic.Error
-	return errors.As(err, &apierr) && apierr.StatusCode == 404
+	return errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -177,7 +178,7 @@ func (r *ServiceAccountWorkspaceResource) Read(ctx context.Context, req resource
 	member, err := findServiceAccountWorkspaceMembership(ctx, r.client, data.ServiceAccountID.ValueString(), data.WorkspaceID.ValueString())
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -189,7 +190,7 @@ func (r *SkillResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	res, err := r.client.Beta.Skills.Get(ctx, data.ID.ValueString(), anthropic.BetaSkillGetParams{Betas: skillsBetas()})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -237,7 +238,7 @@ func (r *SkillResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 			_, err := r.client.Beta.Skills.Versions.Delete(ctx, v.Version, anthropic.BetaSkillVersionDeleteParams{SkillID: skillID, Betas: skillsBetas()})
 			if err != nil {
 				var apierr *anthropic.Error
-				if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+				if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 					continue
 				}
 				resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete skill version %s: %s", v.Version, err))
@@ -253,7 +254,7 @@ func (r *SkillResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 	_, err := r.client.Beta.Skills.Delete(ctx, skillID, anthropic.BetaSkillDeleteParams{Betas: skillsBetas()})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			// Already gone — treat as success.
 			return
 		}

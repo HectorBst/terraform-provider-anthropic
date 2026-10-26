@@ -503,7 +503,7 @@ func (r *FederationIssuerResource) Read(ctx context.Context, req resource.ReadRe
 		// The issuer was deleted out-of-band: drop it from state so the next
 		// plan recreates it instead of erroring forever.
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}

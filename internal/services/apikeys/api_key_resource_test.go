@@ -68,7 +68,7 @@ func objectString(t *testing.T, obj types.Object, name string) types.String {
 func TestAPIKeyRead_parsesResponse(t *testing.T) {
 	wsID := "wrkspc_01WS"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || r.URL.Path != "/v1/organizations/api_keys/apikey_01ABC" {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/organizations/api_keys/apikey_01ABC" {
 			http.Error(w, "unexpected request", http.StatusBadRequest)
 			return
 		}
@@ -155,7 +155,7 @@ func TestAPIKeyRead_notFound(t *testing.T) {
 func TestAPIKeyUpdate_sendsCorrectPayload(t *testing.T) {
 	var capturedBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/v1/organizations/api_keys/apikey_01ABC" {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/organizations/api_keys/apikey_01ABC" {
 			http.Error(w, "unexpected request", http.StatusBadRequest)
 			return
 		}

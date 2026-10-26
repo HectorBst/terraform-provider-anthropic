@@ -290,7 +290,7 @@ func TestAdminClient_doRequest_nonJsonErrorBody(t *testing.T) {
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected *APIError, got %T", err)
 	}
-	if apiErr.StatusCode != 500 {
+	if apiErr.StatusCode != http.StatusInternalServerError {
 		t.Errorf("StatusCode = %d, want 500", apiErr.StatusCode)
 	}
 	if !strings.Contains(apiErr.Message, "Internal Server Error") {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -56,7 +57,7 @@ func awaitDeploymentArchivedForTest(client anthropic.Client, id string) error {
 		deployment, err := client.Beta.Deployments.Get(context.Background(), id, anthropic.BetaDeploymentGetParams{})
 		if err != nil {
 			var apierr *anthropic.Error
-			if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+			if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 				return fmt.Errorf("deployment %s not found while waiting for it to be archived", id)
 			}
 			return err

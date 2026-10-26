@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"time"
 
@@ -217,7 +218,7 @@ func (r *ServiceAccountResource) Read(ctx context.Context, req resource.ReadRequ
 		// The service account was deleted out-of-band: drop it from state so the
 		// next plan recreates it instead of erroring forever.
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -246,7 +247,7 @@ func isTerminalServiceAccountReadError(err error) bool {
 	}
 
 	switch apierr.StatusCode {
-	case 401, 403, 404:
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
 		return true
 	default:
 		return false

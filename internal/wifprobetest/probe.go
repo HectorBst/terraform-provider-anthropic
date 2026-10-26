@@ -16,6 +16,7 @@ package wifprobetest
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -86,7 +87,7 @@ func Write(t *testing.T, res *Result, write func() (time.Time, error)) time.Time
 			return writtenAt
 		}
 		var apierr *anthropic.Error
-		if !errors.As(err, &apierr) || apierr.StatusCode != 404 || time.Now().After(deadline) {
+		if !errors.As(err, &apierr) || apierr.StatusCode != http.StatusNotFound || time.Now().After(deadline) {
 			Fatal(t, fmt.Sprintf("%s trial %d write (after %d 404s)", res.Endpoint, res.Trial, res.WriteNotFound), err)
 		}
 		res.WriteNotFound++
@@ -112,7 +113,7 @@ func Read(t *testing.T, res *Result, writtenAt time.Time, read func() (updatedAt
 		switch {
 		case err != nil:
 			var apierr *anthropic.Error
-			if errors.As(err, &apierr) && apierr.StatusCode == 401 {
+			if errors.As(err, &apierr) && apierr.StatusCode == http.StatusUnauthorized {
 				Fatal(t, res.Endpoint+" read", err)
 			}
 			t.Logf("%s trial %d: read error (counted as stale): %s", res.Endpoint, res.Trial, err)

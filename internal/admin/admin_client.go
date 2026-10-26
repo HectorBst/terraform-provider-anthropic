@@ -103,7 +103,7 @@ func (e *APIError) Error() string {
 // IsNotFound returns true when err is an APIError with status 404.
 func IsNotFound(err error) bool {
 	var apiErr *APIError
-	return errors.As(err, &apiErr) && apiErr.StatusCode == 404
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }
 
 func NewClient(apiKey string) *Client {

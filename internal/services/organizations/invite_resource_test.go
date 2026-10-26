@@ -40,7 +40,7 @@ func inviteFixture(status string) string {
 
 func TestInviteCreate_mapsResponseToState(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/v1/organizations/invites" {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/organizations/invites" {
 			http.Error(w, "unexpected request", http.StatusBadRequest)
 			return
 		}

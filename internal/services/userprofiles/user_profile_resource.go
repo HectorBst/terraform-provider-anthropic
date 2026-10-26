@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
@@ -212,7 +213,7 @@ func (r *UserProfileResource) Read(ctx context.Context, req resource.ReadRequest
 	profile, err := r.client.Beta.UserProfiles.Get(ctx, data.ID.ValueString(), anthropic.BetaUserProfileGetParams{})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			// A 404 here is ambiguous: it means the profile really was deleted
 			// out-of-band, but it is also what this same endpoint returns for an
 			// organization where the user profiles beta is not (or is no longer)
@@ -301,7 +302,7 @@ func (r *UserProfileResource) Delete(ctx context.Context, req resource.DeleteReq
 	_, err := r.client.Beta.UserProfiles.Delete(ctx, data.ID.ValueString(), anthropic.BetaUserProfileDeleteParams{})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			// Already gone — treat as success. As in Read, a 404 is also what an
 			// organization without the beta gets; nothing more can be done for
 			// such a profile from here either.

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -353,7 +354,7 @@ func (r *DeploymentResource) Read(ctx context.Context, req resource.ReadRequest,
 	deployment, err := r.client.Beta.Deployments.Get(ctx, data.ID.ValueString(), anthropic.BetaDeploymentGetParams{})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -394,7 +395,7 @@ func isTerminalDeploymentReadError(err error) bool {
 	}
 
 	switch apierr.StatusCode {
-	case 401, 403, 404:
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
 		return true
 	default:
 		return false
@@ -522,7 +523,7 @@ func (r *DeploymentResource) Delete(ctx context.Context, req resource.DeleteRequ
 	_, err := r.client.Beta.Deployments.Archive(ctx, data.ID.ValueString(), anthropic.BetaDeploymentArchiveParams{})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			// Already gone — nothing left to archive.
 			return
 		}

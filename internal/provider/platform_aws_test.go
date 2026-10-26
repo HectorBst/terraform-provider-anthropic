@@ -546,7 +546,7 @@ func (c *capturingTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	c.urls = append(c.urls, r.URL.String())
 	c.mu.Unlock()
 	return &http.Response{
-		StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}},
+		StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
 		Body: io.NopCloser(strings.NewReader(`{"id":"x","data":[],"has_more":false}`)), Request: r,
 	}, nil
 }

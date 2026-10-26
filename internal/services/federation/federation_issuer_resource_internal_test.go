@@ -518,7 +518,7 @@ func TestFederationIssuerGet_notFound(t *testing.T) {
 	_, err := client.Beta.Organization.Federation.Issuers.Get(context.Background(), "fdis_missing", anthropic.BetaOrganizationFederationIssuerGetParams{})
 
 	var apierr *anthropic.Error
-	if !errors.As(err, &apierr) || apierr.StatusCode != 404 {
+	if !errors.As(err, &apierr) || apierr.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected a 404 *anthropic.Error, got: %v", err)
 	}
 }

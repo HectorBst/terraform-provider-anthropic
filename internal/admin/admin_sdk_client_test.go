@@ -68,7 +68,7 @@ func TestSDKClient_sendsTheRequestThroughTheSDKClient(t *testing.T) {
 	if string(body) != `{"id":"wrkspc_1"}` {
 		t.Errorf("body = %s", body)
 	}
-	if got.Method != "POST" || got.URL.Path != "/v1/organizations/workspaces" {
+	if got.Method != http.MethodPost || got.URL.Path != "/v1/organizations/workspaces" {
 		t.Errorf("request = %s %s", got.Method, got.URL.Path)
 	}
 	if gotBody != `{"name":"x"}` {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"time"
 
@@ -505,7 +506,7 @@ func (r *FederationRuleResource) Read(ctx context.Context, req resource.ReadRequ
 		// The rule was deleted out-of-band: drop it from state so the next
 		// plan recreates it instead of erroring forever.
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -534,7 +535,7 @@ func isTerminalFederationRuleReadError(err error) bool {
 	}
 
 	switch apierr.StatusCode {
-	case 401, 403, 404:
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
 		return true
 	default:
 		return false
@@ -779,7 +780,7 @@ func (r *FederationRuleResource) Delete(ctx context.Context, req resource.Delete
 	_, err := r.client.Beta.Organization.Federation.Rules.Archive(ctx, data.ID.ValueString(), anthropic.BetaOrganizationFederationRuleArchiveParams{})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			// Already gone — treat as success.
 			return
 		}

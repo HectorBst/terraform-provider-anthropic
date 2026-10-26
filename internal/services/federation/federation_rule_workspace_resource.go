@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -194,7 +195,7 @@ func (r *FederationRuleWorkspaceResource) Read(ctx context.Context, req resource
 	found, err := awaitFederationRuleWorkspaceListed(ctx, r.client.Client, data.FederationRuleID.ValueString(), data.WorkspaceID.ValueString(), federationRuleWorkspaceConsistencyTimeout, federationRuleWorkspaceConsistencyInterval)
 	if err != nil {
 		var apiErr *anthropic.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			// The federation rule itself was archived/deleted out-of-band.
 			resp.State.RemoveResource(ctx)
 			return

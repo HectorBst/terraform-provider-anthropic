@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -289,7 +290,7 @@ func (r *MemoryResource) Read(ctx context.Context, req resource.ReadRequest, res
 	})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -348,7 +349,7 @@ func (r *MemoryResource) Update(ctx context.Context, req resource.UpdateRequest,
 	memory, err := r.client.Beta.MemoryStores.Memories.Update(ctx, state.ID.ValueString(), params)
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 409 && string(apierr.Type()) == memoryPreconditionFailedErrorType {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusConflict && string(apierr.Type()) == memoryPreconditionFailedErrorType {
 			resp.Diagnostics.AddError(
 				"Memory Modified Out-Of-Band",
 				fmt.Sprintf("Memory %q was modified since it was last read (content_sha256 precondition failed). "+
@@ -397,7 +398,7 @@ func isTerminalMemoryReadError(err error) bool {
 	}
 
 	switch apierr.StatusCode {
-	case 401, 403, 404:
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
 		return true
 	default:
 		return false
@@ -468,7 +469,7 @@ func (r *MemoryResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	})
 	if err != nil {
 		var apierr *anthropic.Error
-		if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+		if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 			return
 		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete memory: %s", err))
