@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -48,7 +49,7 @@ func uploadParts(t *testing.T, contentType string, body []byte) (files, fields m
 	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 	for {
 		part, err := reader.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return files, fields
 		}
 		if err != nil {

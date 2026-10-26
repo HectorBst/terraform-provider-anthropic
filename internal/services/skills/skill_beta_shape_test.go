@@ -5,6 +5,7 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"io"
 	"maps"
 	"mime"
@@ -263,7 +264,7 @@ func multipartParts(t *testing.T, r *http.Request) (map[string][]string, []strin
 	var filenames []string
 	for {
 		part, err := mr.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
