@@ -216,7 +216,15 @@ func (c *Client) attempt(template *http.Request, reqBody []byte) ([]byte, *http.
 // to retry; a transport error has no response, as with HTTPClient.
 func (c *Client) sdkAttempt(template *http.Request, reqBody []byte) ([]byte, *http.Response, error) {
 	var res *http.Response
-	opts := []option.RequestOption{option.WithMaxRetries(0), option.WithResponseInto(&res)}
+	opts := []option.RequestOption{
+		option.WithMaxRetries(0),
+		option.WithResponseInto(&res),
+		// The Admin API is organization-wide. Claude Platform on AWS sets a
+		// workspace header on every request of its SDK client, which its
+		// Admin API routes do not require; like the direct client, this one
+		// sends none. A template header, set by the caller, still goes out.
+		option.WithHeaderDel("anthropic-workspace-id"),
+	}
 	for name, values := range template.Header {
 		if http.CanonicalHeaderKey(name) == "Anthropic-Version" {
 			continue

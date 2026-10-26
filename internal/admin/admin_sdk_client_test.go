@@ -267,3 +267,24 @@ func TestSDKClient_gateway404IsNotADeletion(t *testing.T) {
 		t.Errorf("calls = %d, want 1", got)
 	}
 }
+
+// TestSDKClient_sendsNoWorkspaceHeader: Claude Platform on AWS's SDK client
+// stamps anthropic-workspace-id on every request, and its Admin API routes do
+// not require it. Like the direct client, the Admin API client sends none.
+func TestSDKClient_sendsNoWorkspaceHeader(t *testing.T) {
+	var got http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := NewSDKClient(newGatewaySDKClient(srv.URL, option.WithHeader("anthropic-workspace-id", "wrkspc_default")))
+	if _, err := c.DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil); err != nil {
+		t.Fatalf("DoRequest: %v", err)
+	}
+	if v := got.Get("anthropic-workspace-id"); v != "" {
+		t.Errorf("anthropic-workspace-id = %q, want none", v)
+	}
+}
