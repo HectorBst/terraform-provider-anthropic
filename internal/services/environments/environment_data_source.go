@@ -291,7 +291,7 @@ func (d *EnvironmentDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 
 	configObj, diags := types.ObjectValue(envDSConfigAttrTypes, map[string]attr.Value{
-		"type":       types.StringValue(string(env.Config.Type)),
+		"type":       types.StringValue(env.Config.Type),
 		"networking": networkingObj,
 		"packages":   packagesObj,
 	})

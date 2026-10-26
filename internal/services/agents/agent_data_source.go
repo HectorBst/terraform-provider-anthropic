@@ -297,7 +297,7 @@ func (d *AgentDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 func mapAgentResponseToDataSource(agent *anthropic.BetaManagedAgentsAgent, data *AgentDataSourceModel) diag.Diagnostics {
 	data.ID = types.StringValue(agent.ID)
 	data.Name = types.StringValue(agent.Name)
-	data.Model = types.StringValue(string(agent.Model.ID))
+	data.Model = types.StringValue(agent.Model.ID)
 	data.Version = types.Int64Value(agent.Version)
 	data.CreatedAt = formatTime(agent.CreatedAt)
 	data.UpdatedAt = formatTime(agent.UpdatedAt)

@@ -940,7 +940,7 @@ func (r *AgentResource) ImportState(ctx context.Context, req resource.ImportStat
 // removing it from the configuration clears the pin.
 func buildModelConfigParams(plan AgentResourceModel) anthropic.BetaManagedAgentsModelConfigParams {
 	model := anthropic.BetaManagedAgentsModelConfigParams{
-		ID: anthropic.BetaManagedAgentsModel(plan.Model.ValueString()),
+		ID: plan.Model.ValueString(),
 	}
 	if !plan.ModelSpeed.IsNull() && !plan.ModelSpeed.IsUnknown() {
 		model.Speed = anthropic.BetaManagedAgentsModelConfigParamsSpeed(plan.ModelSpeed.ValueString())
@@ -1266,7 +1266,7 @@ const (
 func mapAgentResponseToState(ctx context.Context, agent *anthropic.BetaManagedAgentsAgent, data *AgentResourceModel, mode mappingMode) diag.Diagnostics {
 	data.ID = types.StringValue(agent.ID)
 	data.Name = types.StringValue(agent.Name)
-	data.Model = types.StringValue(string(agent.Model.ID))
+	data.Model = types.StringValue(agent.Model.ID)
 	data.Version = types.Int64Value(agent.Version)
 	data.CreatedAt = formatTime(agent.CreatedAt)
 	data.UpdatedAt = formatTime(agent.UpdatedAt)

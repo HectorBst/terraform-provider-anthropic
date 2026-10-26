@@ -4,7 +4,6 @@
 package organizations
 
 import (
-	"net/url"
 	"testing"
 )
 
@@ -23,7 +22,7 @@ func TestInvitesDataSource_buildQuery(t *testing.T) {
 		if got := q.Get("email"); got != "jane@example.com" {
 			t.Errorf("email = %q, want jane@example.com", got)
 		}
-		if got := (url.Values)(q)["statuses"]; len(got) != 2 || got[0] != "pending" || got[1] != "expired" {
+		if got := q["statuses"]; len(got) != 2 || got[0] != "pending" || got[1] != "expired" {
 			t.Errorf("statuses = %v, want [pending expired]", got)
 		}
 	})

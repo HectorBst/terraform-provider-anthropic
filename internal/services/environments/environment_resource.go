@@ -683,7 +683,7 @@ func mapEnvironmentResponseToState(ctx context.Context, env *anthropic.BetaEnvir
 	diags.Append(d...)
 
 	configObj, d := types.ObjectValue(environmentConfigAttrTypes, map[string]attr.Value{
-		"type":       types.StringValue(string(env.Config.Type)),
+		"type":       types.StringValue(env.Config.Type),
 		"networking": networkingObj,
 		"packages":   packagesObj,
 	})
