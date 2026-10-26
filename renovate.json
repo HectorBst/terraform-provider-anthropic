@@ -40,6 +40,12 @@
       "groupSlug": "go-deps"
     },
     {
+      "description": "Go toolchain and indirect module updates change the shipped binary like direct ones, so they get the fix type and semantic-release publishes a patch release with them. The :semanticPrefixFixDepsChoreOthers preset of config:recommended gives fix to the require depType only, chore (no release) to the rest.",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["toolchain", "indirect"],
+      "semanticCommitType": "fix"
+    },
+    {
       "matchManagers": ["mise"],
       "groupName": "mise tools",
       "groupSlug": "mise-tools"

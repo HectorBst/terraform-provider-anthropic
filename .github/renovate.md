@@ -113,6 +113,10 @@ automerged `GitHub Actions` group there; only its release-workflow occurrence wa
 | `go 1.26.2` | Language version: the oldest Go that can build the module, and the `GODEBUG` defaults compiled into the binary | Never proposes an update, by design ([gomod manager docs](https://docs.renovatebot.com/modules/manager/gomod/#updating-of-go-mod-and-toolchain-directives)). Raise it by hand, deliberately |
 | `toolchain go1.26.10` | The Go release CI tests with and releases are built with: `actions/setup-go` reads it before the `go` directive | Proposes updates by default, inside the `Go dependencies` group. `osvVulnerabilityAlerts` matches it against the standard-library advisories; it skips the `go` directive |
 
+Both directives' updates, and those of the modules marked `// indirect`, are committed as `fix(deps)`, like direct modules, so that semantic-release publishes a patch release carrying them; the `:semanticPrefixFixDepsChoreOthers` preset of `config:recommended` would otherwise type them `chore(deps)`, which publishes nothing ([preset](https://docs.renovatebot.com/presets-default/#semanticprefixfixdepschoreothers)).
+
+Updates of both lines, and of the modules marked `// indirect`, are committed as `fix(deps)`, like direct modules, so semantic-release publishes a patch release that carries them. The `:semanticPrefixFixDepsChoreOthers` preset of `config:recommended` would type them `chore(deps)`, which publishes nothing ([preset](https://docs.renovatebot.com/presets-default/#semanticprefixfixdepschoreothers), [dependency types](https://docs.renovatebot.com/modules/manager/gomod/#dependency-types)).
+
 The `toolchain` line is what keeps the standard-library vulnerabilities out of the released binaries, so
 leave it in place: `go mod tidy` removes it as soon as it is not newer than the `go` directive.
 
