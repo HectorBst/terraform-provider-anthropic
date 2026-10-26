@@ -370,198 +370,33 @@ func (d *AgentsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 }
 
 // mapAgentToDataSourceObject converts an API agent response to a Terraform object
-// value for inclusion in the agents list. Unlike the resource's Read path, this
-// emits ALL configs returned by the API (no state-based filtering).
+// value for inclusion in the agents list: the values of the anthropic_agent
+// data source (mapAgentResponseToDataSource), every config the API returns
+// included (no state-based filtering).
 func mapAgentToDataSourceObject(agent *anthropic.BetaManagedAgentsAgent) (attr.Value, diag.Diagnostics) {
-	var diags diag.Diagnostics
-
-	// Model speed: API returns "" when standard; preserve a readable value.
-	modelSpeed := types.StringNull()
-	if agent.Model.Speed != "" {
-		modelSpeed = types.StringValue(string(agent.Model.Speed))
-	}
-
-	description := types.StringNull()
-	if agent.Description != "" {
-		description = types.StringValue(agent.Description)
-	}
-
-	system := types.StringNull()
-	if agent.System != "" {
-		system = types.StringValue(agent.System)
-	}
-
-	// Metadata
-	metadata := types.MapNull(types.StringType)
-	if len(agent.Metadata) > 0 {
-		elements := make(map[string]attr.Value, len(agent.Metadata))
-		for k, v := range agent.Metadata {
-			elements[k] = types.StringValue(v)
-		}
-		m, d := types.MapValue(types.StringType, elements)
-		diags.Append(d...)
-		metadata = m
-	}
-
-	// MCP servers
-	mcpServersList := types.ListNull(types.ObjectType{AttrTypes: agentMCPServerAttrTypes})
-	if len(agent.MCPServers) > 0 {
-		serverObjs := make([]attr.Value, len(agent.MCPServers))
-		for i, s := range agent.MCPServers {
-			obj, d := types.ObjectValue(agentMCPServerAttrTypes, map[string]attr.Value{
-				"name": types.StringValue(s.Name),
-				"url":  types.StringValue(s.URL),
-			})
-			diags.Append(d...)
-			serverObjs[i] = obj
-		}
-		list, d := types.ListValue(types.ObjectType{AttrTypes: agentMCPServerAttrTypes}, serverObjs)
-		diags.Append(d...)
-		mcpServersList = list
-	}
-
-	// Skills
-	skillsList := types.ListNull(types.ObjectType{AttrTypes: agentSkillAttrTypes})
-	if len(agent.Skills) > 0 {
-		skillObjs := make([]attr.Value, len(agent.Skills))
-		for i, s := range agent.Skills {
-			obj, d := types.ObjectValue(agentSkillAttrTypes, map[string]attr.Value{
-				"type":     types.StringValue(s.Type),
-				"skill_id": types.StringValue(s.SkillID),
-				"version":  types.StringValue(s.Version),
-			})
-			diags.Append(d...)
-			skillObjs[i] = obj
-		}
-		list, d := types.ListValue(types.ObjectType{AttrTypes: agentSkillAttrTypes}, skillObjs)
-		diags.Append(d...)
-		skillsList = list
-	}
-
-	// Split tools into the three categories.
-	var apiAgentToolset *anthropic.BetaManagedAgentsAgentToolset20260401
-	var apiMCPToolsets []anthropic.BetaManagedAgentsMCPToolset
-	var apiCustomTools []anthropic.BetaManagedAgentsCustomTool
-	for _, tool := range agent.Tools {
-		switch tool.Type {
-		case "agent_toolset_20260401":
-			t := tool.AsAgentToolset20260401()
-			apiAgentToolset = &t
-		case "mcp_toolset":
-			apiMCPToolsets = append(apiMCPToolsets, tool.AsMCPToolset())
-		case "custom":
-			apiCustomTools = append(apiCustomTools, tool.AsCustom())
-		}
-	}
-
-	// Agent toolset
-	agentToolsetObj := types.ObjectNull(agentToolsetAttrTypes)
-	if apiAgentToolset != nil {
-		obj, d := mapAgentToolsetToDataSource(apiAgentToolset)
-		diags.Append(d...)
-		agentToolsetObj = obj
-	}
-
-	// MCP toolsets
-	mcpToolsetsList := types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes})
-	if len(apiMCPToolsets) > 0 {
-		objs := make([]attr.Value, len(apiMCPToolsets))
-		for i, t := range apiMCPToolsets {
-			obj, d := mapMCPToolsetToDataSourceObject(&t)
-			diags.Append(d...)
-			objs[i] = obj
-		}
-		list, d := types.ListValue(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}, objs)
-		diags.Append(d...)
-		mcpToolsetsList = list
-	}
-
-	// Custom tools
-	customToolsList := types.ListNull(types.ObjectType{AttrTypes: agentCustomToolAttrTypes})
-	if len(apiCustomTools) > 0 {
-		objs := make([]attr.Value, len(apiCustomTools))
-		for i, t := range apiCustomTools {
-			inputSchema := jsontypes.NewNormalizedNull()
-			if raw := t.InputSchema.RawJSON(); raw != "" && raw != "null" {
-				inputSchema = jsontypes.NewNormalizedValue(raw)
-			}
-			obj, d := types.ObjectValue(agentCustomToolAttrTypes, map[string]attr.Value{
-				"name":         types.StringValue(t.Name),
-				"description":  types.StringValue(t.Description),
-				"input_schema": inputSchema,
-			})
-			diags.Append(d...)
-			objs[i] = obj
-		}
-		list, d := types.ListValue(types.ObjectType{AttrTypes: agentCustomToolAttrTypes}, objs)
-		diags.Append(d...)
-		customToolsList = list
-	}
-
-	multiagentObj, d := mapMultiagentToObject(agent.Multiagent, agent.ID)
-	diags.Append(d...)
-
-	identityObj, d := executionIdentityObject(agent.ExecutionIdentity)
-	diags.Append(d...)
-
-	archivedAt := types.StringNull()
-	if !agent.ArchivedAt.IsZero() {
-		archivedAt = types.StringValue(agent.ArchivedAt.Format(time.RFC3339))
-	}
-
+	var data AgentDataSourceModel
+	diags := mapAgentResponseToDataSource(agent, &data)
 	obj, d := types.ObjectValue(agentListItemAttrTypes, map[string]attr.Value{
-		"id":                  types.StringValue(agent.ID),
-		"name":                types.StringValue(agent.Name),
-		"model":               types.StringValue(string(agent.Model.ID)),
-		"model_speed":         modelSpeed,
-		"model_effort":        modelEffortFromResponse(agent.Model),
-		"model_inference_geo": modelInferenceGeoFromResponse(agent.Model),
-		"description":         description,
-		"system":              system,
-		"metadata":            metadata,
-		"mcp_servers":         mcpServersList,
-		"skills":              skillsList,
-		"agent_toolset":       agentToolsetObj,
-		"mcp_toolsets":        mcpToolsetsList,
-		"custom_tools":        customToolsList,
-		"multiagent":          multiagentObj,
-		"execution_identity":  identityObj,
-		"version":             types.Int64Value(agent.Version),
-		"created_at":          types.StringValue(agent.CreatedAt.Format(time.RFC3339)),
-		"updated_at":          types.StringValue(agent.UpdatedAt.Format(time.RFC3339)),
-		"archived_at":         archivedAt,
-	})
-	diags.Append(d...)
-	return obj, diags
-}
-
-// mapMCPToolsetToDataSourceObject converts an API MCP toolset to a Terraform
-// object. Emits ALL API configs (no state-based filtering).
-func mapMCPToolsetToDataSourceObject(apiToolset *anthropic.BetaManagedAgentsMCPToolset) (types.Object, diag.Diagnostics) {
-	var diags diag.Diagnostics
-
-	configsList := types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes})
-	if len(apiToolset.Configs) > 0 {
-		configObjs := make([]attr.Value, len(apiToolset.Configs))
-		for i, c := range apiToolset.Configs {
-			obj, d := types.ObjectValue(agentMCPToolConfigAttrTypes, map[string]attr.Value{
-				"name":              types.StringValue(c.Name),
-				"enabled":           types.BoolValue(c.Enabled),
-				"permission_policy": types.StringValue(c.PermissionPolicy.Type),
-			})
-			diags.Append(d...)
-			configObjs[i] = obj
-		}
-		list, d := types.ListValue(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes}, configObjs)
-		diags.Append(d...)
-		configsList = list
-	}
-
-	obj, d := types.ObjectValue(agentMCPToolsetAttrTypes, map[string]attr.Value{
-		"mcp_server_name":           types.StringValue(apiToolset.MCPServerName),
-		"default_enabled":           types.BoolValue(apiToolset.DefaultConfig.Enabled),
-		"default_permission_policy": types.StringValue(apiToolset.DefaultConfig.PermissionPolicy.Type),
-		"configs":                   configsList,
+		"id":                  data.ID,
+		"name":                data.Name,
+		"model":               data.Model,
+		"model_speed":         data.ModelSpeed,
+		"model_effort":        data.ModelEffort,
+		"model_inference_geo": data.ModelInferenceGeo,
+		"description":         data.Description,
+		"system":              data.System,
+		"metadata":            data.Metadata,
+		"mcp_servers":         data.MCPServers,
+		"skills":              data.Skills,
+		"agent_toolset":       data.AgentToolset,
+		"mcp_toolsets":        data.MCPToolsets,
+		"custom_tools":        data.CustomTools,
+		"multiagent":          data.Multiagent,
+		"execution_identity":  data.ExecutionIdentity,
+		"version":             data.Version,
+		"created_at":          data.CreatedAt,
+		"updated_at":          data.UpdatedAt,
+		"archived_at":         data.ArchivedAt,
 	})
 	diags.Append(d...)
 	return obj, diags

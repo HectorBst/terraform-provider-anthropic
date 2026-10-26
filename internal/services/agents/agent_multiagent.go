@@ -285,79 +285,103 @@ func validateMultiagentConfig(ctx context.Context, obj types.Object) diag.Diagno
 	return diags
 }
 
-// validateMultiagentRoster checks the coordinator roster entries.
+// validateMultiagentRoster checks the coordinator roster entries: each entry
+// in list order (validateRosterEntry), then at most one self and one advisor.
 func validateMultiagentRoster(ctx context.Context, agents types.List) diag.Diagnostics {
-	var diags diag.Diagnostics
-	// Decode element by element: ElementsAs fails on a single unknown element
-	// object (e.g. a conditional entry), which must stay valid at plan time.
-	// Unknown elements keep a zero-valued slot (null type) and are skipped below.
-	elems := agents.Elements()
-	entries := make([]agentMultiagentEntryModel, len(elems))
-	for i, el := range elems {
-		o, ok := el.(types.Object)
-		if !ok || o.IsNull() || o.IsUnknown() {
-			continue
-		}
-		diags.Append(o.As(ctx, &entries[i], basetypes.ObjectAsOptions{})...)
-	}
+	entries, diags := decodeRosterEntries(ctx, agents)
 	if diags.HasError() {
 		return diags
 	}
 
-	isSet := func(v attr.Value) bool { return !v.IsNull() && !v.IsUnknown() }
-	isMissing := func(v attr.Value) bool { return v.IsNull() && !v.IsUnknown() }
-
-	selfs, advisors := 0, 0
+	roster := path.Root("multiagent").AtName("agents")
+	counts := map[string]int{}
 	seenIDs := map[string]bool{}
 	for i, e := range entries {
-		p := path.Root("multiagent").AtName("agents").AtListIndex(i)
-		if e.Type.IsNull() || e.Type.IsUnknown() {
+		if !isKnown(e.Type) {
 			continue
 		}
-		switch e.Type.ValueString() {
-		case multiagentEntryAgent:
-			if isSet(e.ID) {
-				if seenIDs[e.ID.ValueString()] {
-					diags.AddAttributeError(path.Root("multiagent").AtName("agents"), "Duplicate agent entry",
-						fmt.Sprintf("Roster entries must reference distinct agents; %q appears more than once.", e.ID.ValueString()))
-				}
-				seenIDs[e.ID.ValueString()] = true
-			}
-			if isMissing(e.ID) {
-				diags.AddAttributeError(p.AtName("id"), "Missing roster agent ID", `"id" is required when type is "agent".`)
-			}
-			if isSet(e.Model) {
-				diags.AddAttributeError(p.AtName("model"), "Unexpected roster model", `"model" is only allowed when type is "advisor".`)
-			}
-		case multiagentEntrySelf:
-			selfs++
-			if isSet(e.ID) {
-				diags.AddAttributeError(p.AtName("id"), "Unexpected roster agent ID", `"id" is only allowed when type is "agent".`)
-			}
-			if isSet(e.Model) {
-				diags.AddAttributeError(p.AtName("model"), "Unexpected roster model", `"model" is only allowed when type is "advisor".`)
-			}
-			if isSet(e.Version) {
-				diags.AddAttributeError(p.AtName("version"), "Unexpected roster version", `"version" is only allowed when type is "agent".`)
-			}
-		case multiagentEntryAdvisor:
-			advisors++
-			if isMissing(e.Model) {
-				diags.AddAttributeError(p.AtName("model"), "Missing advisor model", `"model" is required when type is "advisor".`)
-			}
-			if isSet(e.ID) {
-				diags.AddAttributeError(p.AtName("id"), "Unexpected roster agent ID", `"id" is only allowed when type is "agent".`)
-			}
-			if isSet(e.Version) {
-				diags.AddAttributeError(p.AtName("version"), "Unexpected roster version", `"version" is only allowed when type is "agent".`)
-			}
+		counts[e.Type.ValueString()]++
+		diags.Append(validateRosterEntry(e, roster.AtListIndex(i), seenIDs)...)
+	}
+	if counts[multiagentEntrySelf] > 1 {
+		diags.AddAttributeError(roster, "Duplicate self entry", `At most one roster entry may have type "self".`)
+	}
+	if counts[multiagentEntryAdvisor] > 1 {
+		diags.AddAttributeError(roster, "Duplicate advisor entry", `At most one roster entry may have type "advisor".`)
+	}
+	return diags
+}
+
+// decodeRosterEntries decodes the roster element by element: ElementsAs fails
+// on a single unknown element object (e.g. a conditional entry), which must
+// stay valid at plan time. Unknown elements keep a zero-valued slot (null
+// type), which the checks skip.
+func decodeRosterEntries(ctx context.Context, agents types.List) ([]agentMultiagentEntryModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	elems := agents.Elements()
+	entries := make([]agentMultiagentEntryModel, len(elems))
+	for i, el := range elems {
+		o, ok := el.(types.Object)
+		if !ok || !isKnown(o) {
+			continue
 		}
+		diags.Append(o.As(ctx, &entries[i], basetypes.ObjectAsOptions{})...)
 	}
-	if selfs > 1 {
-		diags.AddAttributeError(path.Root("multiagent").AtName("agents"), "Duplicate self entry", `At most one roster entry may have type "self".`)
+	return entries, diags
+}
+
+// validateRosterEntry checks one roster entry of known type at p: the
+// attributes its type requires and forbids, and, for an agent, an ID no
+// earlier entry references (seenIDs).
+func validateRosterEntry(e agentMultiagentEntryModel, p path.Path, seenIDs map[string]bool) diag.Diagnostics {
+	var diags diag.Diagnostics
+	switch e.Type.ValueString() {
+	case multiagentEntryAgent:
+		if isKnown(e.ID) {
+			if seenIDs[e.ID.ValueString()] {
+				diags.AddAttributeError(path.Root("multiagent").AtName("agents"), "Duplicate agent entry",
+					fmt.Sprintf("Roster entries must reference distinct agents; %q appears more than once.", e.ID.ValueString()))
+			}
+			seenIDs[e.ID.ValueString()] = true
+		}
+		if e.ID.IsNull() {
+			diags.AddAttributeError(p.AtName("id"), "Missing roster agent ID", `"id" is required when type is "agent".`)
+		}
+		diags.Append(rejectRosterModel(e, p)...)
+	case multiagentEntrySelf:
+		diags.Append(rejectRosterID(e, p)...)
+		diags.Append(rejectRosterModel(e, p)...)
+		diags.Append(rejectRosterVersion(e, p)...)
+	case multiagentEntryAdvisor:
+		if e.Model.IsNull() {
+			diags.AddAttributeError(p.AtName("model"), "Missing advisor model", `"model" is required when type is "advisor".`)
+		}
+		diags.Append(rejectRosterID(e, p)...)
+		diags.Append(rejectRosterVersion(e, p)...)
 	}
-	if advisors > 1 {
-		diags.AddAttributeError(path.Root("multiagent").AtName("agents"), "Duplicate advisor entry", `At most one roster entry may have type "advisor".`)
+	return diags
+}
+
+func rejectRosterID(e agentMultiagentEntryModel, p path.Path) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if isKnown(e.ID) {
+		diags.AddAttributeError(p.AtName("id"), "Unexpected roster agent ID", `"id" is only allowed when type is "agent".`)
+	}
+	return diags
+}
+
+func rejectRosterModel(e agentMultiagentEntryModel, p path.Path) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if isKnown(e.Model) {
+		diags.AddAttributeError(p.AtName("model"), "Unexpected roster model", `"model" is only allowed when type is "advisor".`)
+	}
+	return diags
+}
+
+func rejectRosterVersion(e agentMultiagentEntryModel, p path.Path) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if isKnown(e.Version) {
+		diags.AddAttributeError(p.AtName("version"), "Unexpected roster version", `"version" is only allowed when type is "agent".`)
 	}
 	return diags
 }
@@ -367,7 +391,7 @@ func validateMultiagentRoster(ctx context.Context, agents types.List) diag.Diagn
 // agents are off (the API rejects it otherwise), and the predefined entries.
 func validateMultiagentMember(ctx context.Context, obj types.Object, p path.Path) diag.Diagnostics {
 	var diags diag.Diagnostics
-	if obj.IsNull() || obj.IsUnknown() {
+	if !isKnown(obj) {
 		return diags
 	}
 	var m agentMultiagentMemberModel
@@ -375,36 +399,50 @@ func validateMultiagentMember(ctx context.Context, obj types.Object, p path.Path
 	if diags.HasError() {
 		return diags
 	}
-	isSet := func(v attr.Value) bool { return !v.IsNull() && !v.IsUnknown() }
 
-	if isSet(m.Enabled) && !m.Enabled.ValueBool() {
-		for _, f := range []struct {
-			name  string
-			value attr.Value
-		}{
-			{"inline_agents_enabled", m.InlineAgentsEnabled},
-			{"predefined_agents", m.PredefinedAgents},
-		} {
-			if isSet(f.value) {
-				diags.AddAttributeError(p.AtName(f.name), "Unexpected setting on a disabled member",
-					fmt.Sprintf(`%q is only allowed when "enabled" is true.`, f.name))
-			}
-		}
+	if isKnown(m.Enabled) && !m.Enabled.ValueBool() {
+		diags.Append(validateDisabledMember(m, p)...)
 		return diags
 	}
-	if isSet(m.InlineAgentsEnabled) && !m.InlineAgentsEnabled.ValueBool() && m.PredefinedAgents.IsNull() {
+	if isKnown(m.InlineAgentsEnabled) && !m.InlineAgentsEnabled.ValueBool() && m.PredefinedAgents.IsNull() {
 		diags.AddAttributeError(p.AtName("predefined_agents"), "Missing predefined agents",
 			`"predefined_agents" must list at least one agent when "inline_agents_enabled" is false.`)
 	}
-	if !isSet(m.PredefinedAgents) {
+	if !isKnown(m.PredefinedAgents) {
 		return diags
 	}
+	diags.Append(validatePredefinedAgents(ctx, m.PredefinedAgents, p.AtName("predefined_agents"))...)
+	return diags
+}
 
+// validateDisabledMember rejects the other attributes of a disabled setting.
+func validateDisabledMember(m agentMultiagentMemberModel, p path.Path) diag.Diagnostics {
+	var diags diag.Diagnostics
+	for _, f := range []struct {
+		name  string
+		value attr.Value
+	}{
+		{"inline_agents_enabled", m.InlineAgentsEnabled},
+		{"predefined_agents", m.PredefinedAgents},
+	} {
+		if isKnown(f.value) {
+			diags.AddAttributeError(p.AtName(f.name), "Unexpected setting on a disabled member",
+				fmt.Sprintf(`%q is only allowed when "enabled" is true.`, f.name))
+		}
+	}
+	return diags
+}
+
+// validatePredefinedAgents checks the known entries of a predefined_agents
+// list at p: each entry (validatePredefinedAgent), then at most one self. An
+// entry that cannot be decoded stops the checks.
+func validatePredefinedAgents(ctx context.Context, list types.List, p path.Path) diag.Diagnostics {
+	var diags diag.Diagnostics
 	selfs := 0
 	seenIDs := map[string]bool{}
-	for i, el := range m.PredefinedAgents.Elements() {
+	for i, el := range list.Elements() {
 		o, ok := el.(types.Object)
-		if !ok || o.IsNull() || o.IsUnknown() {
+		if !ok || !isKnown(o) {
 			continue
 		}
 		var e agentMultiagentPredefinedAgentModel
@@ -412,30 +450,43 @@ func validateMultiagentMember(ctx context.Context, obj types.Object, p path.Path
 			diags.Append(d...)
 			return diags
 		}
-		ep := p.AtName("predefined_agents").AtListIndex(i)
-		switch e.Type.ValueString() {
-		case multiagentEntryAgent:
-			if e.ID.IsNull() {
-				diags.AddAttributeError(ep.AtName("id"), "Missing predefined agent ID", `"id" is required when type is "agent".`)
-			} else if !e.ID.IsUnknown() {
-				if seenIDs[e.ID.ValueString()] {
-					diags.AddAttributeError(p.AtName("predefined_agents"), "Duplicate predefined agent",
-						fmt.Sprintf("Predefined agents must be distinct; %q appears more than once.", e.ID.ValueString()))
-				}
-				seenIDs[e.ID.ValueString()] = true
-			}
-		case multiagentEntrySelf:
+		if e.Type.ValueString() == multiagentEntrySelf {
 			selfs++
-			if isSet(e.ID) {
-				diags.AddAttributeError(ep.AtName("id"), "Unexpected predefined agent ID", `"id" is only allowed when type is "agent".`)
-			}
-			if isSet(e.Version) {
-				diags.AddAttributeError(ep.AtName("version"), "Unexpected predefined agent version", `"version" is only allowed when type is "agent".`)
-			}
 		}
+		diags.Append(validatePredefinedAgent(e, p, i, seenIDs)...)
 	}
 	if selfs > 1 {
-		diags.AddAttributeError(p.AtName("predefined_agents"), "Duplicate self entry", `At most one predefined agent may have type "self".`)
+		diags.AddAttributeError(p, "Duplicate self entry", `At most one predefined agent may have type "self".`)
+	}
+	return diags
+}
+
+// validatePredefinedAgent checks entry i of the predefined_agents list at p:
+// an agent needs an ID no earlier entry references (seenIDs), a self takes
+// neither ID nor version.
+func validatePredefinedAgent(e agentMultiagentPredefinedAgentModel, p path.Path, i int, seenIDs map[string]bool) diag.Diagnostics {
+	var diags diag.Diagnostics
+	ep := p.AtListIndex(i)
+	switch e.Type.ValueString() {
+	case multiagentEntryAgent:
+		switch {
+		case e.ID.IsNull():
+			diags.AddAttributeError(ep.AtName("id"), "Missing predefined agent ID", `"id" is required when type is "agent".`)
+		case e.ID.IsUnknown():
+			// Not known yet: neither missing nor a duplicate.
+		case seenIDs[e.ID.ValueString()]:
+			diags.AddAttributeError(p, "Duplicate predefined agent",
+				fmt.Sprintf("Predefined agents must be distinct; %q appears more than once.", e.ID.ValueString()))
+		default:
+			seenIDs[e.ID.ValueString()] = true
+		}
+	case multiagentEntrySelf:
+		if isKnown(e.ID) {
+			diags.AddAttributeError(ep.AtName("id"), "Unexpected predefined agent ID", `"id" is only allowed when type is "agent".`)
+		}
+		if isKnown(e.Version) {
+			diags.AddAttributeError(ep.AtName("version"), "Unexpected predefined agent version", `"version" is only allowed when type is "agent".`)
+		}
 	}
 	return diags
 }
@@ -631,7 +682,7 @@ func buildMultiagentMember(ctx context.Context, obj, prior types.Object) (multia
 		inline:     true,
 		predefined: []anthropic.BetaManagedAgentsMultiagentPredefinedAgentParamsUnion{},
 	}
-	if obj.IsNull() || obj.IsUnknown() {
+	if !isKnown(obj) {
 		return out, diags
 	}
 	var m agentMultiagentMemberModel
@@ -639,14 +690,14 @@ func buildMultiagentMember(ctx context.Context, obj, prior types.Object) (multia
 	if diags.HasError() {
 		return out, diags
 	}
-	if !m.Enabled.IsNull() && !m.Enabled.IsUnknown() && !m.Enabled.ValueBool() {
+	if isKnown(m.Enabled) && !m.Enabled.ValueBool() {
 		out.enabled = false
 		return out, diags
 	}
-	if !m.InlineAgentsEnabled.IsNull() && !m.InlineAgentsEnabled.IsUnknown() {
+	if isKnown(m.InlineAgentsEnabled) {
 		out.inline = m.InlineAgentsEnabled.ValueBool()
 	}
-	if m.PredefinedAgents.IsNull() || m.PredefinedAgents.IsUnknown() {
+	if !isKnown(m.PredefinedAgents) {
 		return out, diags
 	}
 	entries, d := predefinedAgentEntries(ctx, m.PredefinedAgents)
@@ -654,24 +705,43 @@ func buildMultiagentMember(ctx context.Context, obj, prior types.Object) (multia
 	if diags.HasError() {
 		return out, diags
 	}
+	predefined, d := predefinedAgentsParams(entries, priorPredefinedVersions(ctx, prior))
+	diags.Append(d...)
+	out.predefined = append(out.predefined, predefined...)
+	return out, diags
+}
 
-	priorVersions := map[string]int64{}
-	if !prior.IsNull() && !prior.IsUnknown() {
-		var pm agentMultiagentMemberModel
-		if !prior.As(ctx, &pm, basetypes.ObjectAsOptions{}).HasError() && !pm.PredefinedAgents.IsNull() && !pm.PredefinedAgents.IsUnknown() {
-			if pe, d := predefinedAgentEntries(ctx, pm.PredefinedAgents); !d.HasError() {
-				priorVersions = priorAgentVersions(pe)
-			}
-		}
+// priorPredefinedVersions returns the version state holds for each `agent`
+// entry of a setting's predefined_agents, none when prior has no list or one
+// that cannot be decoded.
+func priorPredefinedVersions(ctx context.Context, prior types.Object) map[string]int64 {
+	if !isKnown(prior) {
+		return map[string]int64{}
 	}
+	var pm agentMultiagentMemberModel
+	if prior.As(ctx, &pm, basetypes.ObjectAsOptions{}).HasError() || !isKnown(pm.PredefinedAgents) {
+		return map[string]int64{}
+	}
+	pe, d := predefinedAgentEntries(ctx, pm.PredefinedAgents)
+	if d.HasError() {
+		return map[string]int64{}
+	}
+	return priorAgentVersions(pe)
+}
 
+// predefinedAgentsParams builds the predefined_agents entries, an `agent`
+// entry reusing the version prior state pins (agentReferenceParams). It
+// stops at an entry of unknown type, returning the entries before it.
+func predefinedAgentsParams(entries []agentMultiagentEntryModel, priorVersions map[string]int64) ([]anthropic.BetaManagedAgentsMultiagentPredefinedAgentParamsUnion, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	var out []anthropic.BetaManagedAgentsMultiagentPredefinedAgentParamsUnion
 	for _, e := range entries {
 		switch e.Type.ValueString() {
 		case multiagentEntryAgent:
 			p := agentReferenceParams(e, priorVersions)
-			out.predefined = append(out.predefined, anthropic.BetaManagedAgentsMultiagentPredefinedAgentParamsUnion{OfBetaManagedAgentsAgents: &p})
+			out = append(out, anthropic.BetaManagedAgentsMultiagentPredefinedAgentParamsUnion{OfBetaManagedAgentsAgents: &p})
 		case multiagentEntrySelf:
-			out.predefined = append(out.predefined, anthropic.BetaManagedAgentsMultiagentPredefinedAgentParamsUnion{
+			out = append(out, anthropic.BetaManagedAgentsMultiagentPredefinedAgentParamsUnion{
 				OfBetaManagedAgentsMultiagentSelfs: &anthropic.BetaManagedAgentsMultiagentSelfParams{
 					Type: anthropic.BetaManagedAgentsMultiagentSelfParamsTypeSelf,
 				},
@@ -883,69 +953,83 @@ func mapMultiagentToState(ctx context.Context, ma anthropic.BetaManagedAgentsMul
 func correlateRoster(priorEntries []agentMultiagentEntryModel, apiEntries []multiagentRosterEntry, ownerID string,
 	apiValue func(multiagentRosterEntry) (attr.Value, diag.Diagnostics), selfValue func() (attr.Value, diag.Diagnostics),
 ) ([]attr.Value, diag.Diagnostics) {
-	var diags diag.Diagnostics
-	used := make([]bool, len(apiEntries))
-	find := func(match func(a multiagentRosterEntry) bool) int {
-		for i, a := range apiEntries {
-			if !used[i] && match(a) {
-				used[i] = true
-				return i
-			}
-		}
-		return -1
-	}
-
-	slots := make([]attr.Value, len(priorEntries))
+	c := rosterCorrelation{api: apiEntries, used: make([]bool, len(apiEntries)), slots: make([]attr.Value, len(priorEntries))}
 	// Pass 1: explicit agents and advisors. Pass 2: self, so an explicit reference
 	// to the owner's own ID is never claimed by a self entry.
 	for pass := 1; pass <= 2; pass++ {
 		for i, p := range priorEntries {
-			typ := p.Type.ValueString()
-			var idx int
-			switch {
-			case pass == 1 && typ == multiagentEntryAgent:
-				idx = find(func(a multiagentRosterEntry) bool {
-					return a.Type == multiagentEntryAgent && a.ID == p.ID.ValueString()
-				})
-			case pass == 1 && typ == multiagentEntryAdvisor:
-				idx = find(func(a multiagentRosterEntry) bool { return a.Type == multiagentEntryAdvisor })
-			case pass == 2 && typ == multiagentEntrySelf:
-				idx = find(func(a multiagentRosterEntry) bool {
-					return a.Type == multiagentEntryAgent && a.ID == ownerID
-				})
-			default:
-				continue
+			if match := rosterMatch(pass, p, ownerID); match != nil {
+				c.claim(i, p.Type.ValueString(), match, apiValue, selfValue)
 			}
-			if idx < 0 {
-				continue
-			}
-			var v attr.Value
-			var d diag.Diagnostics
-			if typ == multiagentEntrySelf {
-				v, d = selfValue()
-			} else {
-				v, d = apiValue(apiEntries[idx])
-			}
-			diags.Append(d...)
-			slots[i] = v
 		}
 	}
 
 	vals := make([]attr.Value, 0, len(apiEntries))
-	for _, s := range slots {
+	for _, s := range c.slots {
 		if s != nil {
 			vals = append(vals, s)
 		}
 	}
 	for i, a := range apiEntries {
-		if used[i] {
+		if c.used[i] {
 			continue
 		}
 		v, d := apiValue(a)
-		diags.Append(d...)
+		c.diags.Append(d...)
 		vals = append(vals, v)
 	}
-	return vals, diags
+	return vals, c.diags
+}
+
+// rosterCorrelation is the progress of correlateRoster: the API entries
+// already claimed, and the value of each prior entry that found one.
+type rosterCorrelation struct {
+	api   []multiagentRosterEntry
+	used  []bool
+	slots []attr.Value
+	diags diag.Diagnostics
+}
+
+// claim gives prior entry i, of type typ, the first unclaimed API entry match
+// accepts, if any: the API entry's value, or the self value for a self entry.
+func (c *rosterCorrelation) claim(i int, typ string, match func(multiagentRosterEntry) bool,
+	apiValue func(multiagentRosterEntry) (attr.Value, diag.Diagnostics), selfValue func() (attr.Value, diag.Diagnostics),
+) {
+	for idx, a := range c.api {
+		if c.used[idx] || !match(a) {
+			continue
+		}
+		c.used[idx] = true
+		var v attr.Value
+		var d diag.Diagnostics
+		if typ == multiagentEntrySelf {
+			v, d = selfValue()
+		} else {
+			v, d = apiValue(a)
+		}
+		c.diags.Append(d...)
+		c.slots[i] = v
+		return
+	}
+}
+
+// rosterMatch returns what identifies the API entry of prior entry p in pass
+// (1: agent by id, advisor by type; 2: self as the owner's own agent entry),
+// or nil when p is not correlated in that pass.
+func rosterMatch(pass int, p agentMultiagentEntryModel, ownerID string) func(multiagentRosterEntry) bool {
+	switch typ := p.Type.ValueString(); {
+	case pass == 1 && typ == multiagentEntryAgent:
+		return func(a multiagentRosterEntry) bool {
+			return a.Type == multiagentEntryAgent && a.ID == p.ID.ValueString()
+		}
+	case pass == 1 && typ == multiagentEntryAdvisor:
+		return func(a multiagentRosterEntry) bool { return a.Type == multiagentEntryAdvisor }
+	case pass == 2 && typ == multiagentEntrySelf:
+		return func(a multiagentRosterEntry) bool {
+			return a.Type == multiagentEntryAgent && a.ID == ownerID
+		}
+	}
+	return nil
 }
 
 // multiagentMemberAPI is a `subagents` or `workflows` setting as the API
@@ -1018,46 +1102,19 @@ func mapMultiagent20261001(ctx context.Context, ma anthropic.BetaManagedAgentsMu
 }
 
 func mapMultiagentMember(ctx context.Context, api multiagentMemberAPI, current types.Object, ownerID string, verbatim bool) (types.Object, diag.Diagnostics) {
-	var diags diag.Diagnostics
-	predefinedType := types.ObjectType{AttrTypes: agentMultiagentPredefinedAgentAttrTypes}
-
-	verbatimList := func() types.List {
-		if len(api.agents) == 0 {
-			return types.ListNull(predefinedType)
-		}
-		vals := make([]attr.Value, 0, len(api.agents))
-		for _, a := range api.agents {
-			v, d := predefinedAgentAPIValue(a)
-			diags.Append(d...)
-			vals = append(vals, v)
-		}
-		list, d := types.ListValue(predefinedType, vals)
-		diags.Append(d...)
-		return list
-	}
-
 	if verbatim {
-		inline := types.BoolNull()
-		predefined := types.ListNull(predefinedType)
-		if api.enabled {
-			inline = types.BoolValue(api.inline)
-			predefined = verbatimList()
-		}
-		obj, d := types.ObjectValue(agentMultiagentMemberAttrTypes, map[string]attr.Value{
-			"enabled": types.BoolValue(api.enabled), "inline_agents_enabled": inline, "predefined_agents": predefined,
-		})
-		diags.Append(d...)
-		return obj, diags
+		return mapMultiagentMemberVerbatim(api)
 	}
 
-	configured := !current.IsNull() && !current.IsUnknown()
+	var diags diag.Diagnostics
+	configured := isKnown(current)
 	if !configured && api.isDefault() {
 		return types.ObjectNull(agentMultiagentMemberAttrTypes), diags
 	}
 	cur := agentMultiagentMemberModel{
 		Enabled:             types.BoolNull(),
 		InlineAgentsEnabled: types.BoolNull(),
-		PredefinedAgents:    types.ListNull(predefinedType),
+		PredefinedAgents:    types.ListNull(types.ObjectType{AttrTypes: agentMultiagentPredefinedAgentAttrTypes}),
 	}
 	if configured {
 		var decoded agentMultiagentMemberModel
@@ -1071,24 +1128,14 @@ func mapMultiagentMember(ctx context.Context, api multiagentMemberAPI, current t
 		enabled = types.BoolNull()
 	}
 	inline := types.BoolNull()
-	predefined := types.ListNull(predefinedType)
+	predefined := types.ListNull(types.ObjectType{AttrTypes: agentMultiagentPredefinedAgentAttrTypes})
 	if api.enabled {
 		if !api.inline || !cur.InlineAgentsEnabled.IsNull() {
 			inline = types.BoolValue(api.inline)
 		}
-		if cur.PredefinedAgents.IsNull() || cur.PredefinedAgents.IsUnknown() {
-			predefined = verbatimList()
-		} else if priorEntries, d := predefinedAgentEntries(ctx, cur.PredefinedAgents); d.HasError() {
-			predefined = verbatimList()
-		} else {
-			vals, d := correlateRoster(priorEntries, api.agents, ownerID, predefinedAgentAPIValue, func() (attr.Value, diag.Diagnostics) {
-				return predefinedAgentValue(multiagentEntrySelf, types.StringNull(), types.Int64Null())
-			})
-			diags.Append(d...)
-			list, d := types.ListValue(predefinedType, vals)
-			diags.Append(d...)
-			predefined = list
-		}
+		var d diag.Diagnostics
+		predefined, d = correlatePredefinedAgents(ctx, api.agents, cur.PredefinedAgents, ownerID)
+		diags.Append(d...)
 	}
 
 	obj, d := types.ObjectValue(agentMultiagentMemberAttrTypes, map[string]attr.Value{
@@ -1096,4 +1143,62 @@ func mapMultiagentMember(ctx context.Context, api multiagentMemberAPI, current t
 	})
 	diags.Append(d...)
 	return obj, diags
+}
+
+// mapMultiagentMemberVerbatim maps a setting as the API returns it (data
+// sources): inline_agents_enabled and predefined_agents null when the setting
+// is off.
+func mapMultiagentMemberVerbatim(api multiagentMemberAPI) (types.Object, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	inline := types.BoolNull()
+	predefined := types.ListNull(types.ObjectType{AttrTypes: agentMultiagentPredefinedAgentAttrTypes})
+	if api.enabled {
+		inline = types.BoolValue(api.inline)
+		var d diag.Diagnostics
+		predefined, d = predefinedAgentsVerbatim(api.agents)
+		diags.Append(d...)
+	}
+	obj, d := types.ObjectValue(agentMultiagentMemberAttrTypes, map[string]attr.Value{
+		"enabled": types.BoolValue(api.enabled), "inline_agents_enabled": inline, "predefined_agents": predefined,
+	})
+	diags.Append(d...)
+	return obj, diags
+}
+
+// predefinedAgentsVerbatim maps the API's predefined agents as returned, null
+// when there are none.
+func predefinedAgentsVerbatim(agents []multiagentRosterEntry) (types.List, diag.Diagnostics) {
+	predefinedType := types.ObjectType{AttrTypes: agentMultiagentPredefinedAgentAttrTypes}
+	if len(agents) == 0 {
+		return types.ListNull(predefinedType), nil
+	}
+	var diags diag.Diagnostics
+	vals := make([]attr.Value, 0, len(agents))
+	for _, a := range agents {
+		v, d := predefinedAgentAPIValue(a)
+		diags.Append(d...)
+		vals = append(vals, v)
+	}
+	list, d := types.ListValue(predefinedType, vals)
+	diags.Append(d...)
+	return list, diags
+}
+
+// correlatePredefinedAgents maps the API's predefined agents onto the
+// configured list like the coordinator roster (correlateRoster); verbatim when
+// the configuration has no list or one that cannot be decoded.
+func correlatePredefinedAgents(ctx context.Context, agents []multiagentRosterEntry, current types.List, ownerID string) (types.List, diag.Diagnostics) {
+	if !isKnown(current) {
+		return predefinedAgentsVerbatim(agents)
+	}
+	priorEntries, d := predefinedAgentEntries(ctx, current)
+	if d.HasError() {
+		return predefinedAgentsVerbatim(agents)
+	}
+	vals, diags := correlateRoster(priorEntries, agents, ownerID, predefinedAgentAPIValue, func() (attr.Value, diag.Diagnostics) {
+		return predefinedAgentValue(multiagentEntrySelf, types.StringNull(), types.Int64Null())
+	})
+	list, d := types.ListValue(types.ObjectType{AttrTypes: agentMultiagentPredefinedAgentAttrTypes}, vals)
+	diags.Append(d...)
+	return list, diags
 }

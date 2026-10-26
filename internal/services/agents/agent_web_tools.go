@@ -41,14 +41,9 @@ const (
 )
 
 // webToolOptionTools lists, per web option attribute, the built-in tools that
-// accept it. The plan-time validator and buildAgentToolConfigParams both read it.
-var webToolOptionTools = map[string][]string{
-	"allowed_domains":    {toolNameWebFetch, toolNameWebSearch},
-	"blocked_domains":    {toolNameWebFetch, toolNameWebSearch},
-	"max_content_tokens": {toolNameWebFetch},
-	"user_location":      {toolNameWebSearch},
-	"url_sources":        {toolNameWebFetch},
-}
+// accept it, from builtinTools. The plan-time validator and
+// buildAgentToolConfigParams both read it.
+var webToolOptionTools = builtinToolOptions()
 
 // webToolOptionRejection returns a diagnostic detail when the built-in tool
 // `name` does not accept `option`, or "" when it does.
@@ -213,71 +208,96 @@ func (v *agentToolConfigsValidator) ValidateResource(ctx context.Context, req re
 // values stay valid at plan time; an unknown entry or name is skipped.
 func validateAgentToolConfigs(ctx context.Context, toolset types.Object) diag.Diagnostics {
 	var diags diag.Diagnostics
-	if toolset.IsNull() || toolset.IsUnknown() {
+	if !isKnown(toolset) {
 		return diags
 	}
 	configs, ok := toolset.Attributes()["configs"].(types.List)
-	if !ok || configs.IsNull() || configs.IsUnknown() {
+	if !ok || !isKnown(configs) {
 		return diags
 	}
-
-	isSet := func(v attr.Value) bool { return !v.IsNull() && !v.IsUnknown() }
 
 	// Decode element by element: ElementsAs fails on a single unknown element.
 	for i, el := range configs.Elements() {
 		obj, ok := el.(types.Object)
-		if !ok || obj.IsNull() || obj.IsUnknown() {
+		if !ok || !isKnown(obj) {
 			continue
 		}
-		var c agentToolConfigModel
-		if d := obj.As(ctx, &c, basetypes.ObjectAsOptions{}); d.HasError() {
-			diags.Append(d...)
+		d, decoded := validateAgentToolConfig(ctx, obj, path.Root("agent_toolset").AtName("configs").AtListIndex(i))
+		diags.Append(d...)
+		if !decoded {
 			return diags
 		}
-		p := path.Root("agent_toolset").AtName("configs").AtListIndex(i)
+	}
+	return diags
+}
 
-		if isSet(c.AllowedDomains) && isSet(c.BlockedDomains) {
-			diags.AddAttributeError(p.AtName("blocked_domains"), "Conflicting domain lists",
-				`Set either "allowed_domains" or "blocked_domains" on a tool, not both.`)
+// validateAgentToolConfig checks the configs entry obj at p: the domain lists
+// are exclusive, a location sets a field, the URL sources follow their rules,
+// and each option set is one the tool takes. decoded is false when obj or
+// its location cannot be decoded, which stops the checks.
+func validateAgentToolConfig(ctx context.Context, obj types.Object, p path.Path) (diags diag.Diagnostics, decoded bool) {
+	var c agentToolConfigModel
+	if d := obj.As(ctx, &c, basetypes.ObjectAsOptions{}); d.HasError() {
+		return d, false
+	}
+
+	if isKnown(c.AllowedDomains) && isKnown(c.BlockedDomains) {
+		diags.AddAttributeError(p.AtName("blocked_domains"), "Conflicting domain lists",
+			`Set either "allowed_domains" or "blocked_domains" on a tool, not both.`)
+	}
+
+	if isKnown(c.UserLocation) {
+		d, ok := validateUserLocation(ctx, c.UserLocation, p.AtName("user_location"))
+		diags.Append(d...)
+		if !ok {
+			return diags, false
 		}
+	}
 
-		if isSet(c.UserLocation) {
-			var loc agentUserLocationModel
-			if d := c.UserLocation.As(ctx, &loc, basetypes.ObjectAsOptions{}); d.HasError() {
-				diags.Append(d...)
-				return diags
-			}
-			// An unknown field may still resolve to a value: only an all-null
-			// object is rejected.
-			if loc.Country.IsNull() && loc.City.IsNull() && loc.Region.IsNull() && loc.Timezone.IsNull() {
-				diags.AddAttributeError(p.AtName("user_location"), "Empty user location",
-					`"user_location" must set at least one of "country", "city", "region" or "timezone".`)
-			}
-		}
+	if isKnown(c.URLSources) {
+		diags.Append(validateURLSources(ctx, c.URLSources, p.AtName("url_sources"))...)
+	}
 
-		if isSet(c.URLSources) {
-			diags.Append(validateURLSources(ctx, c.URLSources, p.AtName("url_sources"))...)
-		}
+	if isKnown(c.Name) {
+		diags.Append(rejectWebOptions(c, p)...)
+	}
+	return diags, true
+}
 
-		if c.Name.IsNull() || c.Name.IsUnknown() {
+// validateUserLocation requires a field set on a known user_location. An
+// unknown field may still resolve to a value: only an all-null object is
+// rejected. ok is false when the object cannot be decoded.
+func validateUserLocation(ctx context.Context, obj types.Object, p path.Path) (diags diag.Diagnostics, ok bool) {
+	var loc agentUserLocationModel
+	if d := obj.As(ctx, &loc, basetypes.ObjectAsOptions{}); d.HasError() {
+		return d, false
+	}
+	if loc.Country.IsNull() && loc.City.IsNull() && loc.Region.IsNull() && loc.Timezone.IsNull() {
+		diags.AddAttributeError(p, "Empty user location",
+			`"user_location" must set at least one of "country", "city", "region" or "timezone".`)
+	}
+	return diags, true
+}
+
+// rejectWebOptions returns an error per web option set on the configs entry c
+// at p that its tool does not take (webToolOptionTools).
+func rejectWebOptions(c agentToolConfigModel, p path.Path) diag.Diagnostics {
+	var diags diag.Diagnostics
+	for _, opt := range []struct {
+		option string
+		value  attr.Value
+	}{
+		{"allowed_domains", c.AllowedDomains},
+		{"blocked_domains", c.BlockedDomains},
+		{"max_content_tokens", c.MaxContentTokens},
+		{"user_location", c.UserLocation},
+		{"url_sources", c.URLSources},
+	} {
+		if !isKnown(opt.value) {
 			continue
 		}
-		for _, opt := range []struct {
-			option string
-			value  attr.Value
-		}{
-			{"allowed_domains", c.AllowedDomains},
-			{"blocked_domains", c.BlockedDomains},
-			{"max_content_tokens", c.MaxContentTokens},
-			{"user_location", c.UserLocation},
-			{"url_sources", c.URLSources},
-		} {
-			if !isSet(opt.value) {
-				continue
-			}
-			if detail := webToolOptionRejection(opt.option, c.Name.ValueString()); detail != "" {
-				diags.AddAttributeError(p.AtName(opt.option), "Unsupported tool option", detail)
-			}
+		if detail := webToolOptionRejection(opt.option, c.Name.ValueString()); detail != "" {
+			diags.AddAttributeError(p.AtName(opt.option), "Unsupported tool option", detail)
 		}
 	}
 	return diags
