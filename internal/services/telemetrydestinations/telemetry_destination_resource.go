@@ -418,7 +418,7 @@ func (r *TelemetryDestinationResource) Read(ctx context.Context, req resource.Re
 		return
 	}
 
-	m, diags := mapTelemetryDestinationToModel(d, ids)
+	m, diags := mapTelemetryDestinationToModel(ctx, d, ids)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -569,7 +569,7 @@ func applyTelemetryDestinationResponse(ctx context.Context, d *telemetryDestinat
 			diags.Append(ws.WorkspaceIDs.ElementsAs(ctx, &ids, false)...)
 		}
 	}
-	m, dd := mapTelemetryDestinationToModel(d, ids)
+	m, dd := mapTelemetryDestinationToModel(ctx, d, ids)
 	diags.Append(dd...)
 	setFromModel(data, m)
 	return diags

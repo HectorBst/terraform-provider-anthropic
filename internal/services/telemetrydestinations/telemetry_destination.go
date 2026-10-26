@@ -165,12 +165,12 @@ var deliveryHealthAttrTypes = map[string]attr.Type{
 // list to TelemetryDestinationModel. workspaceIDs is ignored for type `all`,
 // which has no list; an empty list maps to null, as the resource's
 // workspace_ids is either omitted or non-empty.
-func mapTelemetryDestinationToModel(d *telemetryDestinationAPIResponse, workspaceIDs []string) (TelemetryDestinationModel, diag.Diagnostics) {
+func mapTelemetryDestinationToModel(ctx context.Context, d *telemetryDestinationAPIResponse, workspaceIDs []string) (TelemetryDestinationModel, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	ids := types.SetNull(types.StringType)
 	if d.Workspaces.Type != workspacesAll && len(workspaceIDs) > 0 {
-		v, dd := types.SetValueFrom(context.Background(), types.StringType, workspaceIDs)
+		v, dd := types.SetValueFrom(ctx, types.StringType, workspaceIDs)
 		diags.Append(dd...)
 		ids = v
 	}
@@ -203,7 +203,7 @@ func mapTelemetryDestinationToModel(d *telemetryDestinationAPIResponse, workspac
 	if names == nil {
 		names = []string{}
 	}
-	headerNames, dd := types.SetValueFrom(context.Background(), types.StringType, names)
+	headerNames, dd := types.SetValueFrom(ctx, types.StringType, names)
 	diags.Append(dd...)
 
 	disabledReason := types.StringNull()
