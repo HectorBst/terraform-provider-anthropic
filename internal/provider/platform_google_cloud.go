@@ -18,9 +18,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
-	"github.com/ippontech/terraform-provider-anthropic/internal/platform"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"github.com/ippontech/terraform-provider-anthropic/internal/platform"
 )
 
 const (

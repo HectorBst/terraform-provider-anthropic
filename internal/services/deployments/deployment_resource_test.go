@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+
 	acctest "github.com/ippontech/terraform-provider-anthropic/internal/acctest"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"

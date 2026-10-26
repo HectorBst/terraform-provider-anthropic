@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
+
 	"github.com/ippontech/terraform-provider-anthropic/internal/oauthtest"
 )
 
