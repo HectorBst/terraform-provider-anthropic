@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	acctest "github.com/ippontech/terraform-provider-anthropic/internal/acctest"
+	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -45,9 +46,12 @@ func testAccCheckSkillVersionDestroyed(s *terraform.State) error {
 			SkillID: skillID,
 			Betas:   []anthropic.AnthropicBeta{anthropic.AnthropicBetaSkills2025_10_02},
 		})
-		if err != nil {
+		if providerrors.IsNotFound(err) {
 			// Resource not found — destroyed successfully.
-			return nil
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("checking skill version %s/%s after destroy: %w", skillID, version, err)
 		}
 		return fmt.Errorf("skill version %s/%s still exists", skillID, version)
 	}

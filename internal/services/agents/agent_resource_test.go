@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	acctest "github.com/ippontech/terraform-provider-anthropic/internal/acctest"
+	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -23,15 +24,17 @@ func testAccCheckAgentDestroyed(s *terraform.State) error {
 			continue
 		}
 		agent, err := client.Beta.Agents.Get(context.Background(), rs.Primary.ID, anthropic.BetaAgentGetParams{})
-		if err != nil {
+		if providerrors.IsNotFound(err) {
 			// Resource not found — destroyed successfully.
-			return nil
+			continue
 		}
-		if !agent.ArchivedAt.IsZero() {
-			// Agent is archived — our Delete succeeded.
-			return nil
+		if err != nil {
+			return fmt.Errorf("checking agent %s after destroy: %w", rs.Primary.ID, err)
 		}
-		return fmt.Errorf("agent %s still exists and is not archived", rs.Primary.ID)
+		if agent.ArchivedAt.IsZero() {
+			return fmt.Errorf("agent %s still exists and is not archived", rs.Primary.ID)
+		}
+		// Agent is archived — our Delete succeeded.
 	}
 	return nil
 }
