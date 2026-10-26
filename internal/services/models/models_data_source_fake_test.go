@@ -29,6 +29,11 @@ func modelCheck(id, displayName, createdAt string, maxInput, maxTokens int64, bi
 		"max_input_tokens": knownvalue.Int64Exact(maxInput),
 		"max_tokens":       knownvalue.Int64Exact(maxTokens),
 		"capabilities":     capabilitiesCheck(bits),
+		// Since feat/models-lifecycle; modelJSON sends none of them.
+		"lifecycle_stage": knownvalue.Null(),
+		"deprecated_at":   knownvalue.Null(),
+		"retires_at":      knownvalue.Null(),
+		"line":            knownvalue.Null(),
 	})
 }
 

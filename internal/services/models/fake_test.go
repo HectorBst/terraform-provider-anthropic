@@ -120,6 +120,18 @@ func capabilitiesCheck(bits uint) knownvalue.Check {
 			"max":    b(12),
 			"medium": b(13),
 		}),
+		// Mapped since feat/models-lifecycle: modelJSON sends no server_tools,
+		// and thinking.types carries the opposite of the thinking flag.
+		"server_tools": knownvalue.ObjectExact(map[string]knownvalue.Check{
+			"code_execution": knownvalue.Bool(false),
+			"web_search":     knownvalue.Bool(false),
+		}),
+		"thinking_types": knownvalue.ObjectExact(map[string]knownvalue.Check{
+			"adaptive":      knownvalue.Bool(bits&(1<<6) == 0),
+			"between_tools": knownvalue.Bool(false),
+			"disabled":      knownvalue.Bool(false),
+			"enabled":       knownvalue.Bool(bits&(1<<6) == 0),
+		}),
 	})
 }
 
