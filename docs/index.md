@@ -138,7 +138,7 @@ Anthropic also serves the Claude API through cloud gateways, each in front of an
 
 ~> **Beta.** Support for Claude Platform on AWS and Claude Models on Google Cloud is in beta: it is verified with offline tests only, against local fake gateways (requests signed and checked with the AWS SDK's own signer, Google tokens from local token endpoints, URL shapes, configuration rules), never against the real gateways, and every plan or apply prints a warning saying so for each alias with an `aws` or `google_cloud` block. Please [open an issue](https://github.com/ippontech/terraform-provider-anthropic/issues) to report what works and what does not.
 
-The main points not verified yet:
+The main points not verified yet, which the [Claude Platform on AWS](guides/claude_platform_on_aws#7-what-is-not-verified) and [Claude Models on Google Cloud](guides/claude_models_on_google_cloud#5-what-is-not-verified) guides list in full:
 
 - whether the gateways serve the types marked Unverified in the [availability table](#availability-by-platform): scheduled deployments on AWS, user profiles on Google Cloud;
 - the shape of the gateways' own errors, such as a 403 from IAM or a route a gateway does not serve;
@@ -191,6 +191,8 @@ provider "anthropic" {
 - `workspace_id` goes into the request URL, never into a header (the gateway rejects `anthropic-workspace-id`). With the `google_cloud` block it is read from `ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID`, never from `ANTHROPIC_WORKSPACE_ID`. It may be left unset only for an alias limited to organization routes: then every type that calls workspace routes fails at plan time. Workspaces are created in the Claude Console (Settings > Workspaces), where their IDs are shown.
 - `google_cloud` conflicts with `api_key`, `admin_api_key`, `auth_token`, `federation` and `aws`, and the first-party variables are not read.
 - `base_url` (or `ANTHROPIC_GOOGLE_CLOUD_BASE_URL`) replaces both derived endpoints, so every route, organization routes included, goes to it.
+
+The [Claude Platform on AWS](guides/claude_platform_on_aws) and [Claude Models on Google Cloud](guides/claude_models_on_google_cloud) guides cover the cloud-side setup: IAM permissions, roles, keys and credentials.
 
 ### Availability by platform
 
