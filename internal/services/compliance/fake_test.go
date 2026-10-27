@@ -68,7 +68,8 @@ func (f *complianceFake) writeSettings(w http.ResponseWriter) {
 
 // updateSettings applies Update Compliance Settings: state as an object
 // {"type": ...} or the "string shorthand"; the response "always returns the
-// canonical object form".
+// canonical object form", which parseState reads (the schema checks the
+// value at plan).
 func (f *complianceFake) updateSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		State json.RawMessage `json:"state"`
@@ -81,10 +82,6 @@ func (f *complianceFake) updateSettings(w http.ResponseWriter, r *http.Request) 
 		}
 		_ = json.Unmarshal(body.State, &obj)
 		state = obj.Type
-	}
-	if state != "enabled" && state != "disabled" {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "state: must be enabled or disabled")
-		return
 	}
 	f.setState(state)
 	f.writeSettings(w)

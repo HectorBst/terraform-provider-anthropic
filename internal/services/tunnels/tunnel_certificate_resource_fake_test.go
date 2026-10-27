@@ -196,6 +196,11 @@ func TestTunnelCertificateResource_errors(t *testing.T) {
 				},
 			},
 			{
+				// "A tunnel holds at most two non-archived certificates": the
+				// API's 409 for a third.
+				PreConfig: func() {
+					srv.FailNextWith(routeCreateCert, http.StatusConflict, "tunnel "+tunnelID(1)+" already has two certificates", 1)
+				},
 				Config:      certConfig(ca),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+register\s+tunnel\s+certificate:.*409.*already\s+has\s+two`),
 			},

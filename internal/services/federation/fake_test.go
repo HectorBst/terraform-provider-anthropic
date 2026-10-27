@@ -120,10 +120,6 @@ func (f *federationFake) write(c *sdktest.Collection, idParam string, apply func
 		if !ok {
 			return
 		}
-		if attrs, _ := body["attributes"].(map[string]any); idParam == "" && len(attrs) > 0 {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", "attributes: not yet supported")
-			return
-		}
 		if idParam == "" {
 			stored := c.Create(map[string]any{})
 			sdktest.WriteJSON(w, http.StatusOK, apply(stored, body, false))
@@ -134,12 +130,6 @@ func (f *federationFake) write(c *sdktest.Collection, idParam string, apply func
 			sdktest.WriteAPIError(w, http.StatusNotFound, "", "not found")
 			return
 		}
-		// rules: "attributes ... Not yet supported; any non-empty value is
-		// rejected with 400" (update reference; the create one says the same).
-		if attrs, _ := body["attributes"].(map[string]any); len(attrs) > 0 {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", "attributes: not yet supported")
-			return
-		}
 		updated, _ := c.Update(stored["id"].(string), map[string]any{}, sdktest.Replace)
 		sdktest.WriteJSON(w, http.StatusOK, apply(updated, body, true))
 	}
@@ -147,9 +137,12 @@ func (f *federationFake) write(c *sdktest.Collection, idParam string, apply func
 
 // applyIssuer stores an issuer with the create defaults of the reference
 // (check_jti true, max_jwt_lifetime_seconds 3600, OIDC discovery), and a poll
-// status except for inline keys ("Typically null for inline-key issuers").
-// An update replaces each field it carries, jwks as a whole;
-// jwks_polling_disabled = false clears jwks_polling_disabled_at.
+// status except for inline keys ("Typically null for inline-key issuers"),
+// all of which mapFederationIssuerToState maps back. An update replaces each
+// field it carries, jwks as a whole; jwks_polling_disabled = false clears
+// jwks_polling_disabled_at. References:
+// https://platform.claude.com/docs/en/api/beta/organization/federation/issuers/create
+// and .../issuers/update.
 func (f *federationFake) applyIssuer(stored, body map[string]any, update bool) map[string]any {
 	if !update {
 		maps.Copy(stored, map[string]any{
@@ -178,7 +171,12 @@ func (f *federationFake) applyIssuer(stored, body map[string]any, update bool) m
 // applyRule stores a rule: each writable field the body carries replaces the
 // stored one, match and target as whole objects, a null description clears
 // it; attributes stay null; target resolves its service account name and
-// workspace_ids lists workspace_id.
+// workspace_ids lists workspace_id, which mapFederationRuleToState maps
+// back. The two response quirks it reproduces are what
+// completeFederationRuleIssuerName (#243) and federationRuleAfterUpdate (#349)
+// work around. References:
+// https://platform.claude.com/docs/en/api/beta/organization/federation/rules/create
+// and .../rules/update.
 func (f *federationFake) applyRule(stored, body map[string]any, update bool) map[string]any {
 	if !update {
 		maps.Copy(stored, map[string]any{
@@ -221,7 +219,10 @@ func (f *federationFake) applyRule(stored, body map[string]any, update bool) map
 	return response
 }
 
-// addWorkspace enables a rule for a workspace.
+// addWorkspace enables a rule for a workspace. Its answer has a null
+// workspace_name, which only the list resolves
+// (https://platform.claude.com/docs/en/api/beta/organization/federation/rules/workspaces/add):
+// FederationRuleWorkspaceResource.Create looks it up there.
 func (f *federationFake) addWorkspace(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		WorkspaceID string `json:"workspace_id"`

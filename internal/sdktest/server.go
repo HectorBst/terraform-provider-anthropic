@@ -164,7 +164,8 @@ func parseParts(contentType string, body io.Reader) ([]Part, error) {
 }
 
 type fault struct {
-	status int // 0 means a connection reset
+	status  int // 0 means a connection reset
+	message string
 }
 
 // NewServer starts a Server with no route and closes it when the test ends.
@@ -209,6 +210,13 @@ func (s *Server) SetMaxRequests(n int) {
 // internal/admin replays them on idempotent requests.
 func (s *Server) FailNext(route string, status, n int) {
 	s.addFaults(route, fault{status: status}, n)
+}
+
+// FailNextWith is FailNext with the error message the API gives, for a test
+// that checks the message reaches the user: a canned answer to a rule of the
+// API the provider does not depend on (CLAUDE.md, "What a fake holds").
+func (s *Server) FailNextWith(route string, status int, message string, n int) {
+	s.addFaults(route, fault{status: status, message: message}, n)
 }
 
 // ResetNext drops the connection of the next n requests to route without an
@@ -269,7 +277,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.t.Errorf("sdktest: unexpected request %s %s: no route matches", r.Method, r.URL.String())
 		WriteAPIError(w, http.StatusNotFound, "", "sdktest: no route for "+r.Method+" "+r.URL.Path)
 	case f != nil && f.status != 0:
-		WriteAPIError(w, f.status, "", fmt.Sprintf("sdktest: injected %d", f.status))
+		message := f.message
+		if message == "" {
+			message = fmt.Sprintf("sdktest: injected %d", f.status)
+		}
+		WriteAPIError(w, f.status, "", message)
 	case f != nil:
 		s.reset(w, r)
 	default:

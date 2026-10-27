@@ -339,6 +339,7 @@ func TestSkillResource_createErrors(t *testing.T) {
 	// The frontmatter name differs from the directory: the API rejects it.
 	mismatched := writeBundle(t, "dir-name", "Mismatch.")
 	writeFile(t, mismatched[0], "---\nname: other-name\ndescription: x\n---\n")
+	srv.FailNextWith(routeCreateSkill, http.StatusBadRequest, `SKILL.md name "other-name" does not match the directory "dir-name"`, 1)
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),

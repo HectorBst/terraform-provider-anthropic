@@ -76,6 +76,7 @@ func workspaceID(n int) string { return fmt.Sprintf("wrkspc_%024d", n) }
 // and default_inference_geo: global"), tags {} and no key. compartment_id is
 // a string per the reference; inference_data_retention is the shape observed
 // live (internal/services/workspaces/CLAUDE.md), not in the reference.
+// mapWorkspaceToState maps these defaults back into the computed attributes.
 func workspaceJSON(n int, name string) map[string]any {
 	return map[string]any{
 		"id":            workspaceID(n),
@@ -139,22 +140,17 @@ func (f *wsFake) setArchived(id string) {
 	f.workspace(id)["archived_at"] = "2026-05-01T00:00:00Z"
 }
 
-// createWorkspace applies Create Workspace: name required (1..255), the
-// data_residency, tags and external_key_id of the body over the defaults.
+// createWorkspace applies Create Workspace: the data_residency, tags and
+// external_key_id of the body over the defaults.
 func (f *wsFake) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
-	name, _ := body["name"].(string)
-	if name == "" || len(name) > 255 {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "name: must be 1 to 255 characters")
-		return
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.created++
-	ws := workspaceJSON(f.created, name)
+	ws := workspaceJSON(f.created, fmt.Sprint(body["name"]))
 	if dr, ok := body["data_residency"].(map[string]any); ok {
 		maps.Copy(ws["data_residency"].(map[string]any), dr)
 	}
@@ -179,11 +175,14 @@ func (f *wsFake) getWorkspace(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteJSON(w, http.StatusOK, ws)
 }
 
-// updateWorkspace applies Update Workspace. The tags semantics are the ones
-// measured live (CLAUDE.md of the service): the API merges tags, a per-key
+// updateWorkspace applies Update Workspace
+// (https://platform.claude.com/docs/en/api/organization/workspaces/update).
+// The tags semantics are the ones measured live (CLAUDE.md of the service),
+// which buildWorkspaceTagsPatch is built on: the API merges tags, a per-key
 // null deletes the key, and a whole-map null is a 400. external_key_id is
 // write-once ("once a key is attached to a Workspace it cannot be detached
-// or replaced").
+// or replaced"), which buildWorkspaceExternalKeyUpdate and
+// externalKeyRequiresReplace follow.
 func (f *wsFake) updateWorkspace(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
@@ -294,19 +293,13 @@ func (f *wsFake) dropMember(workspaceID, userID string) {
 	}
 }
 
-// addMember applies Create Workspace Member: workspace_role "Cannot be
-// workspace_billing".
+// addMember applies Create Workspace Member; an unknown workspace is a 404.
 func (f *wsFake) addMember(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
-	role, _ := body["workspace_role"].(string)
-	user, _ := body["user_id"].(string)
-	if user == "" || role == "" || role == "workspace_billing" {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "user_id and a non-billing workspace_role are required")
-		return
-	}
+	role, user := fmt.Sprint(body["workspace_role"]), fmt.Sprint(body["user_id"])
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	wsID := r.PathValue("workspace_id")
@@ -458,12 +451,14 @@ func (f *wsFake) overridesOf(wsID, rlID string) map[string]int64 {
 	return maps.Clone(f.overrides[wsID][rlID])
 }
 
-// workspaceEntry is the WorkspaceRateLimit entry of l in workspace wsID:
+// workspaceEntry is the WorkspaceRateLimit entry of l in workspace wsID
+// (https://platform.claude.com/docs/en/api/organization/workspaces/rate_limits/list):
 // the stored overrides (source workspace, org_limit for reference, "null
 // when the organization has no limit configured for this limiter type") and,
 // with inherited, the organization's other values (source organization,
 // value equal to org_limit). Without inherited a group without override is
-// not listed. The caller holds f.mu.
+// not listed: WorkspaceRateLimitResource.Read and overridesToState read a
+// type cleared out of band as drift from that. The caller holds f.mu.
 func (f *wsFake) workspaceEntry(wsID string, l orgLimit, inherited bool) (map[string]any, bool) {
 	over := f.overrides[wsID][l.id]
 	if len(over) == 0 && !inherited {
@@ -518,15 +513,10 @@ func (f *wsFake) listWorkspaceLimits(w http.ResponseWriter, r *http.Request) {
 	f.PaginateBy(w, r, sdktest.PageToken, f.pageSize, items, func(l map[string]any) string { return fmt.Sprint(l["rate_limit_id"]) })
 }
 
-// workspaceRateLimitTypes is the enum of WorkspaceRateLimitType.
-var workspaceRateLimitTypes = []string{
-	"fast_itpmca", "fast_otpm", "input_tokens_per_minute", "input_tokens_per_minute_cache_aware",
-	"output_tokens_per_minute", "requests_per_minute", "tokens_per_day", "tokens_per_minute", "tool_uses_per_second",
-}
-
-// setWorkspaceLimits applies Set Workspace Rate Limits: limits has 1 to 16
-// items, an integer value sets the override and null clears it, types not
-// named keep their value; the answer is the group's entry.
+// setWorkspaceLimits applies Set Workspace Rate Limits: an integer value
+// sets the override and null clears it, types not named keep their value
+// (the patch buildWorkspaceRateLimitPatch sends); the answer is the group's
+// entry.
 func (f *wsFake) setWorkspaceLimits(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Limits []struct {
@@ -534,8 +524,8 @@ func (f *wsFake) setWorkspaceLimits(w http.ResponseWriter, r *http.Request) {
 			Value *int64 `json:"value"`
 		} `json:"limits"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Limits) < 1 || len(body.Limits) > 16 {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "limits: 1 to 16 items required")
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
 		return
 	}
 	wsID, rlID := r.PathValue("workspace_id"), r.PathValue("rate_limit_id")
@@ -545,12 +535,6 @@ func (f *wsFake) setWorkspaceLimits(w http.ResponseWriter, r *http.Request) {
 	if f.workspace(wsID) == nil || i < 0 {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "workspace or rate limit not found")
 		return
-	}
-	for _, l := range body.Limits {
-		if !slices.Contains(workspaceRateLimitTypes, l.Type) {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", "unknown limiter type "+l.Type)
-			return
-		}
 	}
 	for _, l := range body.Limits {
 		if l.Value == nil {

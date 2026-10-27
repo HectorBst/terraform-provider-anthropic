@@ -45,9 +45,9 @@ var allRoutes = []string{
 
 // memoryFake is the memory store API on three sdktest collections. Every
 // memory write adds a version, as "Every change to a memory adds one
-// version" (memory_versions/retrieve), whose ID the memory carries as
-// memory_version_id; deleting a store deletes its memories and versions
-// (delete).
+// version" (memory_versions/retrieve): mapMemoryToState maps the new
+// memory_version_id back, a computed attribute that "Changes on every
+// mutation".
 type memoryFake struct {
 	*sdktest.Server
 	stores   *sdktest.Collection
@@ -78,7 +78,8 @@ func newMemoryFake(t *testing.T, pageSize int) *memoryFake {
 }
 
 // newStore stores a live store: description "" and metadata {} when unset
-// ("Empty string when unset", create reference).
+// ("Empty string when unset", create reference), which mapMemoryStoreCommon
+// and preserveEmptyMetadata map back.
 func (f *memoryFake) newStore(name, description string, metadata map[string]any) map[string]any {
 	if metadata == nil {
 		metadata = map[string]any{}
@@ -98,25 +99,21 @@ func (f *memoryFake) createStore(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteJSON(w, http.StatusOK, f.newStore(fmt.Sprint(body["name"]), description, metadata))
 }
 
-// liveStore answers 404 for an unknown store and 400 for an archived one,
-// which accepts no write to itself or its memories (archived_at, create
-// reference).
-func (f *memoryFake) liveStore(w http.ResponseWriter, id string) bool {
-	s, ok := f.stores.Get(id)
-	switch {
-	case !ok:
+// hasStore answers 404 for an unknown store.
+func (f *memoryFake) hasStore(w http.ResponseWriter, id string) bool {
+	if !f.stores.Has(id) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "memory store "+id+" not found")
-	case s["archived_at"] != nil:
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "memory store "+id+" is archived")
+		return false
 	}
-	return ok && s["archived_at"] == nil
+	return true
 }
 
 // updateStore: name and description replace, metadata is a patch where null
-// removes a key (update reference).
+// removes a key (https://platform.claude.com/docs/en/api/beta/memory_stores/update),
+// the patch buildMemoryStoreMetadataPatch sends to drop a key.
 func (f *memoryFake) updateStore(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("memory_store_id")
-	if !f.liveStore(w, id) {
+	if !f.hasStore(w, id) {
 		return
 	}
 	body, ok := f.DecodeBody(w, r)
@@ -137,11 +134,6 @@ func (f *memoryFake) deleteStore(w http.ResponseWriter, r *http.Request) {
 	if !f.stores.Delete(id) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "memory store "+id+" not found")
 		return
-	}
-	for _, c := range []*sdktest.Collection{f.memories, f.versions} {
-		for _, o := range c.List(func(o map[string]any) bool { return o["memory_store_id"] == id }) {
-			c.Delete(o["id"].(string))
-		}
 	}
 	sdktest.WriteJSON(w, http.StatusOK, map[string]any{"type": "memory_store_deleted", "id": id})
 }
@@ -171,6 +163,8 @@ func withContent(m map[string]any, content string) {
 
 // view renders a memory as the view query asks: content is null with basic,
 // the default of every call but retrieve (view, create reference).
+// MemoryResource.Read asks for full and mapMemoryToState keeps the state's
+// content when an answer carries null.
 func view(r *http.Request, o map[string]any, fallback string) map[string]any {
 	if v := r.URL.Query().Get("view"); v == "basic" || (v == "" && fallback == "basic") {
 		o["content"] = nil
@@ -178,26 +172,13 @@ func view(r *http.Request, o map[string]any, fallback string) map[string]any {
 	return o
 }
 
-// pathTaken reports whether another memory of the store has path: paths are
-// unique within a store (memories/create reference), a 409 conflict_error
-// otherwise (errors reference).
-func (f *memoryFake) pathTaken(w http.ResponseWriter, storeID, memoryID, path string) bool {
-	taken := len(f.memories.List(func(m map[string]any) bool {
-		return m["memory_store_id"] == storeID && m["path"] == path && m["id"] != memoryID
-	})) > 0
-	if taken {
-		sdktest.WriteAPIError(w, http.StatusConflict, "", "a memory already exists at "+path)
-	}
-	return taken
-}
-
 func (f *memoryFake) createMemory(w http.ResponseWriter, r *http.Request) {
 	storeID := r.PathValue("memory_store_id")
-	if !f.liveStore(w, storeID) {
+	if !f.hasStore(w, storeID) {
 		return
 	}
 	body, ok := f.DecodeBody(w, r)
-	if !ok || f.pathTaken(w, storeID, "", fmt.Sprint(body["path"])) {
+	if !ok {
 		return
 	}
 	m := f.newMemory(storeID, fmt.Sprint(body["path"]), fmt.Sprint(body["content"]))
@@ -237,11 +218,13 @@ func (f *memoryFake) getMemory(w http.ResponseWriter, r *http.Request) {
 func (f *memoryFake) raceNextUpdate(content string) { f.race.Store(&content) }
 
 // updateMemory applies content and path when given; a content_sha256
-// precondition that does not match fails with a 409 (update reference),
-// typed memory_precondition_failed_error as the provider expects.
+// precondition that does not match fails with a 409 typed
+// memory_precondition_failed_error
+// (https://platform.claude.com/docs/en/api/beta/memory_stores/memories/update),
+// the type MemoryResource.Update branches on.
 func (f *memoryFake) updateMemory(w http.ResponseWriter, r *http.Request) {
 	m, ok := f.memory(w, r)
-	if !ok || !f.liveStore(w, r.PathValue("memory_store_id")) {
+	if !ok {
 		return
 	}
 	if c := f.race.Swap(nil); c != nil {
@@ -268,9 +251,6 @@ func (f *memoryFake) updateMemory(w http.ResponseWriter, r *http.Request) {
 	}
 	patch := map[string]any{}
 	if body.Path != nil {
-		if f.pathTaken(w, m["memory_store_id"].(string), m["id"].(string), *body.Path) {
-			return
-		}
 		patch["path"] = *body.Path
 	}
 	if body.Content != nil {
@@ -295,8 +275,10 @@ func (f *memoryFake) deleteMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 // listMemories filters on path_prefix (whole segments) and, with depth=1,
-// rolls deeper memories up into memory_prefix items. The fake's pager needs
-// an id on every item, so a prefix carries one, which the API's does not.
+// rolls deeper memories up into memory_prefix items
+// (https://platform.claude.com/docs/en/api/beta/memory_stores/memories/list),
+// which MemoriesDataSource.Read maps to prefixes. The fake's pager needs an
+// id on every item, so a prefix carries one, which the API's does not.
 func (f *memoryFake) listMemories(w http.ResponseWriter, r *http.Request, pageSize int) {
 	storeID := r.PathValue("memory_store_id")
 	if !f.stores.Has(storeID) {
@@ -328,13 +310,10 @@ func (f *memoryFake) listMemories(w http.ResponseWriter, r *http.Request, pageSi
 }
 
 // paginate pages a list with page/next_page, newest first for stores
-// (list reference); view=full caps a page at 20 items (memories/list).
+// (list reference).
 func (f *memoryFake) paginate(w http.ResponseWriter, r *http.Request, pageSize int, items []map[string]any) {
 	if r.Pattern == routeListStores {
 		slices.Reverse(items)
-	}
-	if r.URL.Query().Get("view") == "full" && (pageSize == 0 || pageSize > 20) {
-		pageSize = 20
 	}
 	f.Paginate(w, r, sdktest.PageToken, pageSize, items)
 }

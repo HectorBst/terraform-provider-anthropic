@@ -76,6 +76,7 @@ func TestSkillVersionResource_lifecycle(t *testing.T) {
 	skillFiles := hclPaths(writeBundle(t, "pilot-skill", "First upload."))
 	v2 := hclPaths(writeBundle(t, "pilot-skill", "Second upload."))
 	v3 := hclPaths(writeBundle(t, "pilot-skill", "Third upload.", "reference/notes.md"))
+	srv.describeNext("First upload.", "Second upload.", "Third upload.")
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
@@ -172,6 +173,7 @@ func TestSkillVersionResource_removedOutsideTerraform(t *testing.T) {
 	srv := newSkillsFake(t, 0)
 	skillFiles := hclPaths(writeBundle(t, "pilot-skill", "First upload."))
 	v2 := hclPaths(writeBundle(t, "pilot-skill", "Second upload."))
+	srv.describeNext("First upload.", "Second upload.", "Second upload.")
 	config := skillAndVersionConfig(skillFiles, v2)
 
 	resource.UnitTest(t, resource.TestCase{

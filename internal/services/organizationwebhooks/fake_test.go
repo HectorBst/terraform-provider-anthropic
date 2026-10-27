@@ -5,9 +5,9 @@ package organizationwebhooks_test
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
@@ -113,50 +113,21 @@ func (f *webhooksFake) disable(id, reason string) {
 	ep["state"], ep["disabled_reason"] = "disabled", reason
 }
 
-// urlTaken reports whether another enabled endpoint uses url: "Two enabled
-// organization webhook endpoints in your organization can't share a URL"
-// (409). The caller holds f.mu.
-func (f *webhooksFake) urlTaken(url, except string) bool {
-	return slices.ContainsFunc(f.endpoints, func(ep map[string]any) bool {
-		return ep["id"] != except && ep["url"] == url && ep["state"] == "enabled"
-	})
-}
-
-// validEvents applies "Must list at least one" and the two event types.
-func validEvents(v any) ([]any, bool) {
-	events, _ := v.([]any)
-	for _, e := range events {
-		if e != eventOpened && e != eventClosed {
-			return nil, false
-		}
-	}
-	return events, true
-}
-
-// create applies Create: url (HTTPS), enabled_events (at least one), name
-// and description; the answer adds the whsec_ signing_secret.
+// create applies Create: url, enabled_events, name and description; the
+// answer adds the whsec_ signing_secret.
 func (f *webhooksFake) create(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
-	url, _ := body["url"].(string)
-	events, ok := validEvents(body["enabled_events"])
-	if !strings.HasPrefix(url, "https://") || !ok || len(events) == 0 {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "url must be HTTPS and enabled_events must list at least one event type")
-		return
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.urlTaken(url, "") {
-		sdktest.WriteAPIError(w, http.StatusConflict, "", "another enabled endpoint uses this url")
-		return
-	}
 	f.created++
+	url, _ := body["url"].(string)
 	name, _ := body["name"].(string)
 	description, _ := body["description"].(string)
 	ep := endpointJSON(f.created, url, name, description)
-	ep["enabled_events"] = events
+	ep["enabled_events"] = body["enabled_events"]
 	f.endpoints = append(f.endpoints, ep)
 	out := sdktest.DeepCopy(ep)
 	out["signing_secret"] = fmt.Sprintf("whsec_created%d", f.created)
@@ -178,8 +149,11 @@ func (f *webhooksFake) get(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteAPIError(w, http.StatusNotFound, "", "webhook endpoint not found")
 }
 
-// update applies Update: the fields sent change, the others stay; "An empty
-// list doesn't clear the list"; state enabled clears disabled_reason.
+// update applies Update: the fields sent change, the others stay; state
+// enabled clears disabled_reason
+// (https://platform.claude.com/docs/en/api/beta/organization/webhooks/update),
+// which mapOrganizationWebhookToModel then maps to null when the next apply
+// turns an endpoint Anthropic disabled back on.
 func (f *webhooksFake) update(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
@@ -193,29 +167,9 @@ func (f *webhooksFake) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ep := f.endpoints[i]
-	if url, ok := body["url"].(string); ok && f.urlTaken(url, ep["id"].(string)) {
-		sdktest.WriteAPIError(w, http.StatusConflict, "", "another enabled endpoint uses this url")
-		return
-	}
-	for field, v := range body {
-		switch field {
-		case "enabled_events":
-			events, ok := validEvents(v)
-			if !ok {
-				sdktest.WriteAPIError(w, http.StatusBadRequest, "", "unknown event type")
-				return
-			}
-			if len(events) > 0 {
-				ep[field] = events
-			}
-		case "state":
-			ep[field] = v
-			if v == "enabled" {
-				ep["disabled_reason"] = ""
-			}
-		default:
-			ep[field] = v
-		}
+	maps.Copy(ep, body)
+	if body["state"] == "enabled" {
+		ep["disabled_reason"] = ""
 	}
 	ep["updated_at"] = "2026-10-25T00:00:00Z"
 	sdktest.WriteJSON(w, http.StatusOK, ep)

@@ -143,31 +143,18 @@ func (f *rbacFake) dropGroup(id string) {
 	f.groups = slices.DeleteFunc(f.groups, func(g map[string]any) bool { return g["id"] == id })
 }
 
-// name reads the "name" of a create or update body: "minLength: 1,
-// maxLength: 255".
-func name(w http.ResponseWriter, r *http.Request) (string, bool) {
-	var body struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" || len(body.Name) > 255 {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "name: 1 to 255 characters required")
-		return "", false
-	}
-	return body.Name, true
-}
-
 // createGroup applies Create RBAC Group: a direct group without role (role
 // attachment "is managed in the admin settings and is read-only on this
 // API").
 func (f *rbacFake) createGroup(w http.ResponseWriter, r *http.Request) {
-	n, ok := name(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.created++
-	g := groupJSON(f.created, n, "direct")
+	g := groupJSON(f.created, fmt.Sprint(body["name"]), "direct")
 	f.groups = append(f.groups, g)
 	sdktest.WriteJSON(w, http.StatusOK, g)
 }
@@ -180,26 +167,23 @@ func (f *rbacFake) getGroup(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteAPIError(w, http.StatusNotFound, "", "rbac group not found")
 }
 
-// updateGroup applies Update RBAC Group (the name). A SCIM group cannot be
-// renamed while SCIM provisioning is on (the resource's ModifyPlan warning).
+// updateGroup applies Update RBAC Group (the name). The refusal to rename a
+// SCIM group is canned by the test that needs it.
 func (f *rbacFake) updateGroup(w http.ResponseWriter, r *http.Request) {
-	n, ok := name(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	i := find(f.groups, r.PathValue("rbac_group_id"))
-	switch {
-	case i < 0:
+	if i < 0 {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "rbac group not found")
-	case f.groups[i]["source_type"] == "scim":
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "cannot modify a SCIM-provisioned group")
-	default:
-		f.groups[i]["name"] = n
-		f.groups[i]["updated_at"] = "2026-08-01T00:00:00Z"
-		sdktest.WriteJSON(w, http.StatusOK, f.groups[i])
+		return
 	}
+	f.groups[i]["name"] = body["name"]
+	f.groups[i]["updated_at"] = "2026-08-01T00:00:00Z"
+	sdktest.WriteJSON(w, http.StatusOK, f.groups[i])
 }
 
 // deleteGroup answers {"id", "type": "rbac_group_deleted"}.
@@ -218,11 +202,8 @@ func (f *rbacFake) deleteGroup(w http.ResponseWriter, r *http.Request) {
 // addMember applies Add RBAC Group Member: the body carries user_id, the
 // answer is the membership; an unknown group is a 404.
 func (f *rbacFake) addMember(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		UserID string `json:"user_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID == "" {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "user_id: field required")
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	gid := r.PathValue("rbac_group_id")
@@ -232,7 +213,7 @@ func (f *rbacFake) addMember(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "rbac group not found")
 		return
 	}
-	m := memberJSON(gid, body.UserID)
+	m := memberJSON(gid, fmt.Sprint(body["user_id"]))
 	f.members = append(f.members, m)
 	sdktest.WriteJSON(w, http.StatusOK, m)
 }

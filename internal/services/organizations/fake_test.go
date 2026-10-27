@@ -133,7 +133,9 @@ func inviteJSON(n int, email, role, status string) map[string]any {
 func inviteID(n int) string { return fmt.Sprintf("invite_%024d", n) }
 
 // createInvite applies Create Invite: a pending invite for the body's email
-// and role.
+// and role (https://platform.claude.com/docs/en/api/organization/invites/create).
+// InviteResource.Read keeps the invite only while it is pending, and
+// mapInviteToState maps the status.
 func (f *orgFake) createInvite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email string `json:"email"`

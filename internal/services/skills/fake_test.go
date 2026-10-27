@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -51,6 +52,9 @@ type skillsFake struct {
 	skills   *sdktest.Collection
 	versions *sdktest.Collection
 	nextVer  atomic.Int64
+
+	mu           sync.Mutex
+	descriptions []string // what the next uploads' SKILL.md declare (describeNext)
 }
 
 func newSkillsFake(t *testing.T, pageSize int) *skillsFake {
@@ -75,25 +79,34 @@ func newSkillsFake(t *testing.T, pageSize int) *skillsFake {
 	return f
 }
 
-// bundle is what the fake reads from a multipart upload: the top-level
-// directory and the SKILL.md frontmatter.
+// bundle is what an upload stores: its top-level directory, which the file
+// names of the parts carry ("pilot-skill/SKILL.md"), and the name and
+// description the API reads from its SKILL.md. The fake does not read the
+// files: the name is the directory, as the live API requires
+// (TestAccSkillResource_basic comment), and the description the next one a
+// test set with describeNext, "" otherwise.
 type bundle struct {
 	dir, name, description string
 	files                  []string
 }
 
-// readBundle checks an upload the way the reference describes it: "All files
-// must be in the same top-level directory and must include a SKILL.md file at
-// the root of that directory". The directory must also match the frontmatter
-// name, which the live API enforces (TestAccSkillResource_basic comment). It
-// returns the form fields too.
-func readBundle(r *http.Request) (bundle, map[string]string, error) {
+// describeNext sets the descriptions the next uploads' SKILL.md declare, in
+// upload order.
+func (f *skillsFake) describeNext(descriptions ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.descriptions = append(f.descriptions, descriptions...)
+}
+
+// readBundle reads an upload: "All files must be in the same top-level
+// directory" (create reference), as provretry.MultipartUpload names the
+// parts. It returns the form fields too.
+func (f *skillsFake) readBundle(r *http.Request) (bundle, map[string]string, error) {
 	parts, err := sdktest.ReadParts(r)
 	if err != nil {
 		return bundle{}, nil, err
 	}
 	var b bundle
-	var skillMD string
 	fields := map[string]string{}
 	for _, p := range parts {
 		if p.Filename == "" {
@@ -103,30 +116,19 @@ func readBundle(r *http.Request) (bundle, map[string]string, error) {
 		if p.Field != "files[]" {
 			return bundle{}, nil, fmt.Errorf("unexpected file field %q", p.Field)
 		}
-		dir, rest, ok := strings.Cut(p.Filename, "/")
+		dir, _, ok := strings.Cut(p.Filename, "/")
 		if !ok || dir == "" || (b.dir != "" && dir != b.dir) {
 			return bundle{}, nil, fmt.Errorf("file %q is not in the bundle's top-level directory", p.Filename)
 		}
 		b.dir = dir
 		b.files = append(b.files, p.Filename)
-		if rest == "SKILL.md" {
-			skillMD = string(p.Content)
-		}
 	}
-	if skillMD == "" {
-		return bundle{}, nil, fmt.Errorf("SKILL.md is missing at the root of %q", b.dir)
+	b.name = b.dir
+	f.mu.Lock()
+	if len(f.descriptions) > 0 {
+		b.description, f.descriptions = f.descriptions[0], f.descriptions[1:]
 	}
-	for line := range strings.SplitSeq(skillMD, "\n") {
-		if v, ok := strings.CutPrefix(line, "name:"); ok {
-			b.name = strings.TrimSpace(v)
-		}
-		if v, ok := strings.CutPrefix(line, "description:"); ok {
-			b.description = strings.TrimSpace(v)
-		}
-	}
-	if b.name != b.dir {
-		return bundle{}, nil, fmt.Errorf("SKILL.md name %q does not match the directory %q", b.name, b.dir)
-	}
+	f.mu.Unlock()
 	return b, fields, nil
 }
 
@@ -146,12 +148,14 @@ func (f *skillsFake) newVersion(skillID string, b bundle) map[string]any {
 }
 
 func (f *skillsFake) createSkill(w http.ResponseWriter, r *http.Request) {
-	b, fields, err := readBundle(r)
+	b, fields, err := f.readBundle(r)
 	if err != nil {
 		sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
 		return
 	}
-	title := b.name // derived from the frontmatter when omitted (create reference)
+	// "derived from the SKILL.md frontmatter when omitted" (create
+	// reference), which mapSkillNewResponseToState maps back.
+	title := b.name
 	if v, ok := fields["display_title"]; ok {
 		title = v
 	}
@@ -167,8 +171,9 @@ func (f *skillsFake) createSkill(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteJSON(w, http.StatusOK, s)
 }
 
-// deleteSkill refuses a skill that still has versions, as the API does
-// (comment in SkillResource.Delete, and the reason force_destroy exists).
+// deleteSkill refuses a skill that still has versions, as the API does: that
+// is why SkillResource.Delete deletes the versions first when force_destroy
+// is set, and surfaces the refusal otherwise.
 func (f *skillsFake) deleteSkill(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("skill_id")
 	if !f.skills.Has(id) {
@@ -189,7 +194,7 @@ func (f *skillsFake) createVersion(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "skill "+id+" not found")
 		return
 	}
-	b, _, err := readBundle(r)
+	b, _, err := f.readBundle(r)
 	if err != nil {
 		sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
 		return

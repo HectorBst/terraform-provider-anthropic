@@ -45,9 +45,10 @@ func newFilesFake(t *testing.T, pageSize int) *filesFake {
 	return f
 }
 
-// newFile stores a file as the upload reference describes it: never
+// newFile stores a file as the upload reference describes it
+// (https://platform.claude.com/docs/en/api/files/upload): never
 // downloadable, and expiring expiresIn seconds after its creation, or never
-// when expiresIn is 0.
+// when expiresIn is 0; mapFileToState maps that expires_at.
 func (f *filesFake) newFile(filename, mimeType string, size, expiresIn int) map[string]any {
 	file := f.files.Create(map[string]any{
 		"type": "file", "filename": filename, "mime_type": mimeType, "size_bytes": size, "downloadable": false, "expires_at": nil,
@@ -62,8 +63,8 @@ func (f *filesFake) newFile(filename, mimeType string, size, expiresIn int) map[
 
 // upload reads the multipart form: the "file" part, of which only the final
 // path component of the filename is kept (mime/multipart's FileName does
-// that) and whose Content-Type becomes mime_type, and expires_in_seconds,
-// between 3600 and 7776000 (upload reference).
+// that) and whose Content-Type becomes mime_type, and expires_in_seconds
+// (the schema checks its range at plan).
 func (f *filesFake) upload(w http.ResponseWriter, r *http.Request) {
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -86,11 +87,7 @@ func (f *filesFake) upload(w http.ResponseWriter, r *http.Request) {
 		case "file":
 			filename, mimeType, size = p.FileName(), p.Header.Get("Content-Type"), len(content)
 		case "expires_in_seconds":
-			expiresIn, err = strconv.Atoi(string(content))
-			if err != nil || expiresIn < 3600 || expiresIn > 7776000 {
-				sdktest.WriteAPIError(w, http.StatusBadRequest, "", "expires_in_seconds must be between 3600 and 7776000")
-				return
-			}
+			expiresIn, _ = strconv.Atoi(string(content))
 		}
 	}
 	if size < 0 {
@@ -102,7 +99,8 @@ func (f *filesFake) upload(w http.ResponseWriter, r *http.Request) {
 
 // list pages with page/next_page, or, with ids[], answers the files named
 // that exist in one page; ids is mutually exclusive with page and limit
-// (list reference).
+// (https://platform.claude.com/docs/en/api/files/list), which is why
+// FilesDataSource.Read sends neither with ids and reads a single page.
 func (f *filesFake) list(w http.ResponseWriter, r *http.Request, pageSize int) {
 	q := r.URL.Query()
 	ids := q["ids[]"]

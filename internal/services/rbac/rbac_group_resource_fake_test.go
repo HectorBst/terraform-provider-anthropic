@@ -184,6 +184,9 @@ func TestRBACGroupResource_scimGroupRename(t *testing.T) {
 				ConfigStateChecks: expectGroup(1, "IdP group", "scim", roleIDsCheck("rbac_role_a"), fmt.Sprintf("2026-07-%02dT08:00:00Z", 1)),
 			},
 			{
+				PreConfig: func() {
+					srv.FailNextWith(routeUpdateGroup, http.StatusBadRequest, "cannot modify a SCIM-provisioned group", 1)
+				},
 				Config: groupConfig("Renamed"),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectResourceAction(groupAddr, plancheck.ResourceActionUpdate)},

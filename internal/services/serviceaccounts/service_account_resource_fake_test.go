@@ -222,6 +222,8 @@ func TestServiceAccountResource_apiErrors(t *testing.T) {
 	t.Parallel()
 	srv := newServiceAccountsFake(t, 0)
 	srv.newAccount("taken", nil, nil)
+	// "a duplicate name returns 409" (create reference, name).
+	srv.FailNextWith(routeCreateServiceAccount, http.StatusConflict, "service account name taken is already taken", 1)
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),

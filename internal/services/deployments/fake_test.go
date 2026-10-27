@@ -57,10 +57,10 @@ func newDeploymentsFake(t *testing.T, pageSize int) *deploymentsFake {
 	f.deployments.HandleGet(routeGetDeployment)
 	f.Handle(routeUpdateDeployment, f.update)
 	f.deployments.HandleArchive(routeArchiveDeployment)
-	// pause and unpause: "paused_reason ... Non-null exactly when status is
-	// paused" (manual for the pause endpoint).
-	f.Handle(routePauseDeployment, f.setStatus("paused", map[string]any{"type": "manual"}))
-	f.Handle(routeUnpauseDeployment, f.setStatus("active", nil))
+	// pause and unpause set the status, which mapDeploymentToState maps into
+	// status and paused (.../deployments/pause, .../deployments/unpause).
+	f.Handle(routePauseDeployment, f.setStatus("paused"))
+	f.Handle(routeUnpauseDeployment, f.setStatus("active"))
 	// deployment_runs list: deployment_id, has_error ("true for runs with
 	// non-null error") and trigger_type filter.
 	f.runs.HandleList(routeListRuns, sdktest.PageToken, pageSize, func(r *http.Request, o map[string]any) bool {
@@ -72,18 +72,17 @@ func newDeploymentsFake(t *testing.T, pageSize int) *deploymentsFake {
 	return f
 }
 
-// create stores the deployment the body describes, with the defaults of the
-// create reference's response: an active deployment, the agent ID resolved
-// to version 1, no description, empty metadata, resources and vault_ids, no
-// schedule, no budget. A schedule comes back with its type and computed
-// upcoming runs.
+// create stores the deployment the body describes, with the fields the
+// create reference's response always carries: an active deployment (status,
+// which mapDeploymentToState maps into status and paused), no description,
+// empty metadata, resources and vault_ids, no schedule, no budget.
 func (f *deploymentsFake) create(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
 	obj := map[string]any{
-		"type": "deployment", "status": "active", "paused_reason": nil, "archived_at": nil,
+		"type": "deployment", "status": "active", "archived_at": nil,
 		"description": nil, "metadata": map[string]any{}, "resources": []any{}, "vault_ids": []any{},
 		"schedule": nil,
 	}
@@ -94,8 +93,9 @@ func (f *deploymentsFake) create(w http.ResponseWriter, r *http.Request) {
 
 // update follows https://platform.claude.com/docs/en/api/beta/deployments/update:
 // an omitted field is kept; description, budget, schedule, resources and
-// vault_ids are replaced as a whole, null (or "" for description) clearing
-// them; metadata is a patch where null deletes a key.
+// vault_ids are replaced as a whole, null clearing them; metadata is a
+// patch where null deletes a key, which buildMetadataPatch sends for a key
+// removed from the configuration.
 func (f *deploymentsFake) update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("deployment_id")
 	if !f.deployments.Has(id) {
@@ -105,9 +105,6 @@ func (f *deploymentsFake) update(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
-	}
-	if body["description"] == "" {
-		body["description"] = nil
 	}
 	normalize(body)
 	metadata, patch := body["metadata"]
@@ -119,23 +116,19 @@ func (f *deploymentsFake) update(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteJSON(w, http.StatusOK, obj)
 }
 
-// normalize turns request fields into their response shape: the agent ID
-// string into a reference to version 1 ("Accepts the agent ID string, which
-// pins the latest version"), a schedule into the cron variant.
+// normalize turns the agent ID string a request sends ("Accepts the agent ID
+// string") into the agent reference object every response carries, whose
+// id mapDeploymentToState reads.
 func normalize(obj map[string]any) {
 	if id, ok := obj["agent"].(string); ok {
-		obj["agent"] = map[string]any{"type": "agent", "id": id, "version": 1}
-	}
-	if s, ok := obj["schedule"].(map[string]any); ok {
-		s["type"] = "cron"
-		s["upcoming_runs_at"] = []any{"2026-02-01T09:00:00Z"}
+		obj["agent"] = map[string]any{"type": "agent", "id": id}
 	}
 }
 
 // setStatus answers the pause or unpause endpoint.
-func (f *deploymentsFake) setStatus(status string, reason any) http.HandlerFunc {
+func (f *deploymentsFake) setStatus(status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		obj, ok := f.deployments.Update(r.PathValue("deployment_id"), map[string]any{"status": status, "paused_reason": reason}, sdktest.Replace)
+		obj, ok := f.deployments.Update(r.PathValue("deployment_id"), map[string]any{"status": status}, sdktest.Replace)
 		if !ok {
 			sdktest.WriteAPIError(w, http.StatusNotFound, "", "deployment not found")
 			return

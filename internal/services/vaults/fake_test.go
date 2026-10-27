@@ -97,7 +97,8 @@ func (f *vaultsFake) createVault(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteVault deletes a vault with its credentials (a deleted vault takes
-// its credentials with it, internal/services/vaults/CLAUDE.md).
+// its credentials with it, internal/services/vaults/CLAUDE.md): the
+// credential's Read then meets the 404 it treats as gone.
 func (f *vaultsFake) deleteVault(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("vault_id")
 	if !f.vaults.Delete(id) {
@@ -162,11 +163,15 @@ func (f *vaultsFake) createCredential(w http.ResponseWriter, r *http.Request) {
 // returns the response shape: the secrets (token, access_token,
 // refresh_token, client_secret, secret_value) are dropped; on update an
 // omitted field is kept, a refresh scope of "" clears it ("Send an empty
-// string to clear the stored scope"), token_endpoint_auth keeps its stored
-// type ("It keeps its current token_endpoint_auth type"), networking is
-// replaced as a whole, injection_location merges per field; on create an
-// environment variable without injection_location gets both locations (the
-// schema's documented default, internal/services/vaults).
+// string to clear the stored scope", which clearRemovedScope sends),
+// token_endpoint_auth keeps its stored type ("It keeps its current
+// token_endpoint_auth type", which buildTokenEndpointAuthUpdate relies on),
+// networking is replaced as a whole, injection_location merges per field;
+// on create an environment variable without injection_location gets both
+// locations (the schema's documented default, which
+// mapInjectionLocationResponseToObject maps back). References:
+// https://platform.claude.com/docs/en/api/beta/vaults/credentials/create and
+// .../credentials/update.
 func mergeAuth(stored, body map[string]any) map[string]any {
 	auth := map[string]any{}
 	maps.Copy(auth, stored)
@@ -175,8 +180,8 @@ func mergeAuth(stored, body map[string]any) map[string]any {
 			auth[k] = v
 		}
 	}
-	// The API stores a bare host with a trailing slash (observed live, see
-	// mcpServerURLForState).
+	// The API stores a bare host with a trailing slash (observed live), which
+	// mcpServerURLForState maps back to the configured URL.
 	if u, err := url.Parse(fmt.Sprint(auth["mcp_server_url"])); err == nil && auth["mcp_server_url"] != nil && u.Path == "" {
 		u.Path = "/"
 		auth["mcp_server_url"] = u.String()

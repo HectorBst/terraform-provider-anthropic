@@ -69,26 +69,20 @@ func (f *profilesFake) newProfile(accessType, externalID, name any, metadata map
 	})
 }
 
-// create refuses an empty metadata value ("Values must be non-empty
-// strings", create reference).
 func (f *profilesFake) create(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
 	metadata, _ := body["metadata"].(map[string]any)
-	for k, v := range metadata {
-		if v == "" {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", "metadata."+k+": value must be non-empty")
-			return
-		}
-	}
 	sdktest.WriteJSON(w, http.StatusOK, f.newProfile(body["access_type"], body["external_id"], body["name"], metadata))
 }
 
-// update replaces the fields sent (a null external_id or name clears it)
-// and merges metadata, where an empty value removes the key (update
-// reference).
+// update replaces the fields sent (a null external_id or name clears it,
+// which buildUserProfileUpdateParams sends) and merges metadata, where an
+// empty value removes the key, which buildUserProfileMetadataUpdate sends
+// for a key removed from the configuration
+// (https://platform.claude.com/docs/en/api/beta/user_profiles/update).
 func (f *profilesFake) update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("user_profile_id")
 	if !f.profiles.Has(id) {

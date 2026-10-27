@@ -81,19 +81,17 @@ func sameScope(a, b any) bool {
 	return string(ja) == string(jb)
 }
 
-// set applies Set Spend Limit: an "upsert keyed on (scope, period)";
-// period defaults to monthly; user, organization or workspace scopes only
-// ("Any other combination returns 400").
+// set applies Set Spend Limit
+// (https://platform.claude.com/docs/en/api/beta/organization/spend_limits/set):
+// an "upsert keyed on (scope, period)", which SpendLimitResource.Create
+// relies on to adopt an existing limit; period defaults to monthly, which
+// mapSpendLimitToState maps back.
 func (f *limitsFake) set(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
 	scope, _ := body["scope"].(map[string]any)
-	if !slices.Contains([]any{"user", "organization", "workspace"}, scope["type"]) {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "scope: unsupported type")
-		return
-	}
 	period, _ := body["period"].(string)
 	if period == "" {
 		period = "monthly"

@@ -71,7 +71,8 @@ func newServiceAccountsFake(t *testing.T, pageSize int) *serviceAccountsFake {
 
 // newAccount stores a live service account as the create reference
 // describes it and returns it: description null unless given, role
-// "developer" unless given.
+// "developer" unless given, which mapServiceAccountToState maps back
+// (https://platform.claude.com/docs/en/api/beta/organization/service_accounts/create).
 func (f *serviceAccountsFake) newAccount(name string, description, role any) map[string]any {
 	if role == nil {
 		role = "developer"
@@ -88,17 +89,12 @@ func (f *serviceAccountsFake) newAccount(name string, description, role any) map
 	})
 }
 
-// create: "a duplicate name returns 409" (create reference, name).
 func (f *serviceAccountsFake) create(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
 	name, _ := body["name"].(string)
-	if len(f.accounts.List(func(a map[string]any) bool { return a["name"] == name })) > 0 {
-		sdktest.WriteAPIError(w, http.StatusConflict, "", "service account name "+name+" is already taken")
-		return
-	}
 	sdktest.WriteJSON(w, http.StatusOK, f.newAccount(name, body["description"], body["organization_role"]))
 }
 
@@ -111,18 +107,14 @@ func (f *serviceAccountsFake) list(w http.ResponseWriter, r *http.Request, pageS
 	f.Paginate(w, r, sdktest.PageToken, pageSize, items)
 }
 
-// update follows the update reference: an archived account is a 400; an
-// omitted field is kept; a null description clears it ("the field is stored
-// as an empty string"); a null organization_role leaves it unchanged.
+// update follows the update reference: an omitted field is kept; a null
+// description clears it ("the field is stored as an empty string", which
+// descriptionOrNull maps back to null); a null organization_role leaves it
+// unchanged.
 func (f *serviceAccountsFake) update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("service_account_id")
-	account, ok := f.accounts.Get(id)
-	if !ok {
+	if !f.accounts.Has(id) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "service account "+id+" not found")
-		return
-	}
-	if account["archived_at"] != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "archived service accounts cannot be updated")
 		return
 	}
 	body, ok := f.DecodeBody(w, r)
@@ -139,7 +131,7 @@ func (f *serviceAccountsFake) update(w http.ResponseWriter, r *http.Request) {
 	if role := body["organization_role"]; role != nil {
 		patch["organization_role"] = role
 	}
-	account, _ = f.accounts.Update(id, patch, sdktest.Replace)
+	account, _ := f.accounts.Update(id, patch, sdktest.Replace)
 	sdktest.WriteJSON(w, http.StatusOK, account)
 }
 
@@ -159,18 +151,13 @@ func (f *serviceAccountsFake) archive(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteJSON(w, http.StatusOK, account)
 }
 
-// liveAccount answers the error the membership endpoints give for an
-// account that is unknown (404) or archived (400: "Archived service accounts
-// cannot be added and are rejected", add and update references).
+// liveAccount answers 404 to the membership endpoints of an unknown account.
 func (f *serviceAccountsFake) liveAccount(w http.ResponseWriter, id string) bool {
-	account, ok := f.accounts.Get(id)
-	switch {
-	case !ok:
+	if !f.accounts.Has(id) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "service account "+id+" not found")
-	case account["archived_at"] != nil:
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "service account "+id+" is archived")
+		return false
 	}
-	return ok && account["archived_at"] == nil
+	return true
 }
 
 func membershipKey(serviceAccountID, workspaceID string) string {
@@ -205,7 +192,10 @@ func (f *serviceAccountsFake) addMembership(w http.ResponseWriter, r *http.Reque
 
 // listMemberships follows the list reference: an unknown account is a 404;
 // an archived one lists nothing; the implicit default-workspace membership
-// comes first while the account has no explicit one there.
+// comes first while the account has no explicit one there
+// (https://platform.claude.com/docs/en/api/beta/organization/service_accounts/workspaces/list).
+// findServiceAccountWorkspaceMembership skips that implicit entry and takes
+// a membership no longer listed as gone.
 func (f *serviceAccountsFake) listMemberships(w http.ResponseWriter, r *http.Request, pageSize int) {
 	id := r.PathValue("service_account_id")
 	account, ok := f.accounts.Get(id)

@@ -5,8 +5,8 @@ package apikeys_test
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
-	"slices"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -64,10 +64,9 @@ func scopeWorkspace(k map[string]any) string {
 	return ws
 }
 
-// update applies Update API Key: "name: optional string or null"
-// (minLength 1, maxLength 500) and "status: optional "active" or "archived"
-// or "inactive" or null"; fields the body omits are kept; the answer is the
-// APIKey object. An unknown key is a 404.
+// update applies Update API Key: the name and status sent replace the stored
+// ones, fields the body omits are kept; the answer is the APIKey object. An
+// unknown key is a 404.
 func (f *keysFake) update(w http.ResponseWriter, r *http.Request) {
 	k, ok := f.keys.Get(r.PathValue("api_key_id"))
 	if !ok {
@@ -78,17 +77,7 @@ func (f *keysFake) update(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	for field, v := range body {
-		s, _ := v.(string)
-		switch {
-		case field == "name" && len(s) >= 1 && len(s) <= 500:
-		case field == "status" && slices.Contains([]string{"active", "archived", "inactive"}, s):
-		default:
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", fmt.Sprintf("%s: invalid value %v", field, v))
-			return
-		}
-		k[field] = s
-	}
+	maps.Copy(k, body)
 	f.keys.Put(k)
 	sdktest.WriteJSON(w, http.StatusOK, k)
 }

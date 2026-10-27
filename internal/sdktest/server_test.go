@@ -427,3 +427,23 @@ func TestAssertShape(t *testing.T) {
 		t.Errorf("reported %q, want the two errors of GET /v1/b", errs)
 	}
 }
+
+func TestFailNextWith(t *testing.T) {
+	s := NewServer(t)
+	s.Respond("POST /v1/x", http.StatusOK, `{"ok":true}`)
+	s.FailNextWith("POST /v1/x", http.StatusConflict, "name already taken", 1)
+	c := NewAPIKeyClient(t, s.Server, option.WithMaxRetries(0))
+	ctx := context.Background()
+
+	var apiErr *anthropic.Error
+	if err := c.Post(ctx, "/v1/x", map[string]any{}, nil); !errors.As(err, &apiErr) ||
+		apiErr.StatusCode != http.StatusConflict || !strings.Contains(err.Error(), "name already taken") {
+		t.Errorf("err = %v, want the injected 409 with its message", err)
+	}
+	if err := c.Post(ctx, "/v1/x", map[string]any{}, nil); err != nil {
+		t.Errorf("second request: %v, want the route's answer", err)
+	}
+	if got := s.Requests("POST /v1/x")[0].Fault; got != "status 409" {
+		t.Errorf("fault %q", got)
+	}
+}

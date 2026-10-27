@@ -160,6 +160,11 @@ func (req messageRequest) cached() bool {
 //     cache_miss_reason messages_changed with cache_missed_input_tokens;
 //     with any other ID, previous_message_not_found, which carries no token
 //     count.
+//
+// The API stores nothing, so the answer derives from the request: every
+// field above is one mapMessageToState maps into state, and the two shapes
+// of cache_miss_reason are the ones cacheMissReasonValue tells apart
+// (https://platform.claude.com/docs/en/api/messages/create).
 func (f *messagesFake) createMessage(w http.ResponseWriter, r *http.Request) {
 	req, ok := decodeRequest(w, r)
 	if !ok {
@@ -219,7 +224,9 @@ func (f *messagesFake) createMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // countTokens answers POST /v1/messages/count_tokens with the reference's
-// MessageTokensCount object, {"input_tokens": N}.
+// MessageTokensCount object, {"input_tokens": N}, counted as createMessage
+// counts, which CountTokensDataSource.Read maps
+// (https://platform.claude.com/docs/en/api/messages/count_tokens).
 func (f *messagesFake) countTokens(w http.ResponseWriter, r *http.Request) {
 	req, ok := decodeRequest(w, r)
 	if !ok {

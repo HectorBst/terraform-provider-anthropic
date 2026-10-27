@@ -77,7 +77,8 @@ func newTunnelsFake(t *testing.T, pageSize int) *tunnelsFake {
 }
 
 // newTunnel stores a live tunnel with a fresh domain and token (create
-// reference: "allocates a fresh hostname").
+// reference: "allocates a fresh hostname"), which mapTunnelToState and
+// mapTunnelTokenToState map.
 func (f *tunnelsFake) newTunnel(displayName any) map[string]any {
 	tn := f.tunnels.Create(map[string]any{"type": "tunnel", "display_name": displayName, "archived_at": nil})
 	tn["domain"] = domain(tn["id"].(string))
@@ -98,7 +99,9 @@ func (f *tunnelsFake) createTunnel(w http.ResponseWriter, r *http.Request) {
 }
 
 // archiveTunnel archives the tunnel and its live certificates in the same
-// operation, and is idempotent (archive reference).
+// operation, and is idempotent (archive reference). The provider only
+// documents the cascade (TunnelResource's description); checkAllArchived
+// relies on it for certificates registered outside Terraform.
 func (f *tunnelsFake) archiveTunnel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("tunnel_id")
 	tn, ok := f.tunnels.Archive(id)
@@ -113,17 +116,12 @@ func (f *tunnelsFake) archiveTunnel(w http.ResponseWriter, r *http.Request) {
 }
 
 // token answers the tunnel's current token, the same until a rotation, which
-// replaces it (reveal_token and rotate_token references). An archived tunnel
-// has no token.
+// replaces it (reveal_token and rotate_token references): mapTunnelTokenToState
+// maps it, and TunnelResource.Update rotates it when token_rotation changes.
 func (f *tunnelsFake) token(w http.ResponseWriter, r *http.Request, rotate bool) {
 	id := r.PathValue("tunnel_id")
-	tn, ok := f.tunnels.Get(id)
-	switch {
-	case !ok:
+	if !f.tunnels.Has(id) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "tunnel "+id+" not found")
-		return
-	case tn["archived_at"] != nil:
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "tunnel "+id+" is archived")
 		return
 	}
 	f.mu.Lock()
@@ -143,14 +141,16 @@ func domain(id string) string { return strings.ReplaceAll(id, "_", "-") + ".tunn
 func tokenID(n int) string    { return fmt.Sprintf("ttok_%02d", n) }
 func tokenValue(n int) string { return fmt.Sprintf("sdktest-tunnel-token-%02d", n) }
 
-// createCert registers a CA on a live tunnel, at most two live ones per
-// tunnel, reporting the DER fingerprint and the expiry (certificates/create
-// reference). The API's answer to a third certificate is not documented; the
-// fake gives a 409 conflict_error.
+// createCert registers a CA on a tunnel, reporting the "Lowercase hex
+// SHA-256 fingerprint of the certificate's DER encoding" and its expiry
+// (https://platform.claude.com/docs/en/api/beta/tunnels/certificates/create).
+// caCertificateChanged compares that fingerprint with the configured PEM's
+// to update a re-encoded certificate in place, and
+// mapTunnelCertificateToState maps both. The provider's validator refuses a
+// PEM that is not one certificate before any request.
 func (f *tunnelsFake) createCert(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("tunnel_id")
-	tn, ok := f.tunnels.Get(id)
-	if !ok {
+	if !f.tunnels.Has(id) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "tunnel "+id+" not found")
 		return
 	}
@@ -159,25 +159,19 @@ func (f *tunnelsFake) createCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	block, _ := pem.Decode([]byte(fmt.Sprint(body["ca_certificate_pem"])))
-	var cert *x509.Certificate
-	if block != nil {
-		cert, _ = x509.ParseCertificate(block.Bytes)
+	if block == nil {
+		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "ca_certificate_pem is not PEM")
+		return
 	}
-	live := f.certs.List(func(c map[string]any) bool { return c["tunnel_id"] == id && c["archived_at"] == nil })
-	switch {
-	case tn["archived_at"] != nil:
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "tunnel "+id+" is archived")
-	case cert == nil:
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "ca_certificate_pem is not a certificate")
-	case len(live) >= 2:
-		sdktest.WriteAPIError(w, http.StatusConflict, "", "tunnel "+id+" already has two certificates")
-	default:
-		sum := sha256.Sum256(block.Bytes)
-		sdktest.WriteJSON(w, http.StatusOK, f.certs.Create(map[string]any{
-			"type": "tunnel_certificate", "tunnel_id": id, "fingerprint": hex.EncodeToString(sum[:]),
-			"expires_at": cert.NotAfter.UTC().Format(time.RFC3339), "archived_at": nil,
-		}))
+	var expiresAt any
+	if cert, err := x509.ParseCertificate(block.Bytes); err == nil {
+		expiresAt = cert.NotAfter.UTC().Format(time.RFC3339)
 	}
+	sum := sha256.Sum256(block.Bytes)
+	sdktest.WriteJSON(w, http.StatusOK, f.certs.Create(map[string]any{
+		"type": "tunnel_certificate", "tunnel_id": id, "fingerprint": hex.EncodeToString(sum[:]),
+		"expires_at": expiresAt, "archived_at": nil,
+	}))
 }
 
 // assertRequestShape checks what every request of a test must carry: the

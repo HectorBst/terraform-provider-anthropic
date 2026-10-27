@@ -213,11 +213,17 @@ func TestMemoryResource_apiErrors(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
 			{
+				PreConfig: func() {
+					srv.FailNextWith(routeCreateMemory, http.StatusConflict, "a memory already exists at /taken.md", 1)
+				},
 				Config:      memoryConfig(store, "/taken.md", "mine"),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+create\s+memory:.*409.*already\s+exists`),
 			},
 			{Config: memoryConfig(store, "/mine.md", "mine"), ConfigPlanChecks: providertest.ExpectAction(memoryAddr, plancheck.ResourceActionCreate)},
 			{
+				PreConfig: func() {
+					srv.FailNextWith(routeUpdateMemory, http.StatusConflict, "a memory already exists at /taken.md", 1)
+				},
 				Config:      memoryConfig(store, "/taken.md", "mine"),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+update\s+memory:.*409.*already\s+exists`),
 			},

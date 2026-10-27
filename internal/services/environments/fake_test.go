@@ -109,7 +109,8 @@ func (f *environmentsFake) create(w http.ResponseWriter, r *http.Request) {
 // update follows https://platform.claude.com/docs/en/api/beta/environments/update:
 // an omitted field is kept and a null description clears it; metadata is a
 // patch, where a key set to null or "" is deleted and the other stored keys
-// are kept; config is merged into the stored one as applyConfig says.
+// are kept (tfvalue.MetadataPatch sends null for a removed key); config is
+// merged into the stored one as applyConfig says.
 func (f *environmentsFake) update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("environment_id")
 	stored, found := f.environments.Get(id)
@@ -140,7 +141,11 @@ func (f *environmentsFake) update(w http.ResponseWriter, r *http.Request) {
 // networking, packages and each field of a limited network or of packages.
 // The returned BetaCloudConfig always carries every field: a limited network
 // its two booleans ("Defaults to false") and allowed_hosts, packages its six
-// lists and "type": "packages".
+// lists and "type": "packages". buildNetworkingParams leaves out a boolean
+// the plan does not know, relying on that default and on that preservation,
+// and mapEnvironmentResponseToState maps every field back
+// (https://platform.claude.com/docs/en/api/beta/environments/create,
+// .../environments/update).
 func applyConfig(prev, body map[string]any) map[string]any {
 	if prev == nil {
 		prev = map[string]any{

@@ -459,8 +459,11 @@ func TestFederationRuleResource_attributesRejected(t *testing.T) {
 			t.Parallel()
 			srv := newFederationFake(t, 0)
 			seedIssuer(srv)
-			resource.UnitTest(t, resource.TestCase{ProtoV6ProviderFactories: factories(srv), Steps: steps})
 			route := map[string]string{"create": routeCreateRule, "update": routeUpdateRule}[name]
+			// The API's 400 for non-empty attributes: the first request to
+			// route is the one that carries them.
+			srv.FailNext(route, http.StatusBadRequest, 1)
+			resource.UnitTest(t, resource.TestCase{ProtoV6ProviderFactories: factories(srv), Steps: steps})
 			reqs := srv.Requests(route)
 			var body struct{ Attributes map[string]string }
 			if len(reqs) != 1 {

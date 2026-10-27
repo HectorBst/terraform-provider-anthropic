@@ -22,7 +22,10 @@ const (
 
 // modelsFake serves a fixed list of models: the list in after_id pages of
 // pageSize, newest first as the reference says, and each model by ID or by
-// one of its aliases. An unknown ID is a 404 not_found_error.
+// one of its aliases ("Model identifier or alias",
+// https://platform.claude.com/docs/en/api/models/retrieve), which
+// ModelDataSource.Read maps back as the model's id. An unknown ID is a 404
+// not_found_error.
 type modelsFake struct {
 	*sdktest.Server
 	models  []map[string]any

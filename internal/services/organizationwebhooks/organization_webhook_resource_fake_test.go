@@ -290,6 +290,9 @@ func TestOrganizationWebhookResource_apiErrors(t *testing.T) {
 	t.Parallel()
 	srv := newWebhooksFake(t)
 	srv.put(endpointJSON(1, "https://hooks.example.com/taken", "", "", eventOpened))
+	// "Two enabled organization webhook endpoints in your organization can't
+	// share a URL": the API's 409 to the create, and to the update below.
+	srv.FailNext(routeCreateWebhook, http.StatusConflict, 1)
 	config := func(url string) string {
 		return webhookConfig("  url = \"" + url + "\"\n  enabled_events = [\"" + eventOpened + "\"]\n")
 	}
@@ -309,6 +312,7 @@ func TestOrganizationWebhookResource_apiErrors(t *testing.T) {
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+read\s+organization\s+webhook:\s+API\s+error\s+\(403\s+permission_error\)`),
 			},
 			{
+				PreConfig:   func() { srv.FailNext(routeUpdateWebhook, http.StatusConflict, 1) },
 				Config:      config("https://hooks.example.com/taken"),
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+update\s+organization\s+webhook:\s+API\s+error\s+\(409\s+conflict_error\)`),
 			},

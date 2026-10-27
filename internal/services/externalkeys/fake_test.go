@@ -104,27 +104,19 @@ func (f *keysFake) setAttachment(id, attachment string) {
 	f.keys[f.index(id)]["attachment"] = map[string]any{"type": attachment}
 }
 
-// providerConfig checks a provider_config union member and fills region,
-// which the reference says is "derived from kms_arn if omitted".
-func providerConfig(v any) (map[string]any, bool) {
-	pc, _ := v.(map[string]any)
-	required := map[string][]string{"aws": {"kms_arn"}, "gcp": {"key_name"}, "azure": {"key_name", "vault_uri", "tenant_id"}}
-	fields, ok := required[fmt.Sprint(pc["type"])]
-	if !ok {
-		return nil, false
-	}
-	for _, field := range fields {
-		if s, _ := pc[field].(string); s == "" {
-			return nil, false
-		}
-	}
-	out := maps.Clone(pc)
-	if out["type"] == "aws" && out["region"] == nil {
-		if parts := strings.Split(out["kms_arn"].(string), ":"); len(parts) > 3 {
+// providerConfig fills the region of an aws provider_config, "derived from
+// kms_arn if omitted"
+// (https://platform.claude.com/docs/en/api/organization/external_keys/create):
+// providerConfigBody leaves out a region the plan does not know so that the
+// API derives it, and mapExternalKeyToModel maps it back.
+func providerConfig(v any) map[string]any {
+	out := sdktest.DeepCopy(v.(map[string]any))
+	if arn, ok := out["kms_arn"].(string); ok && out["region"] == nil {
+		if parts := strings.Split(arn, ":"); len(parts) > 3 {
 			out["region"] = parts[3]
 		}
 	}
-	return out, true
+	return out
 }
 
 // create applies Create External Key: provider_config required,
@@ -134,11 +126,7 @@ func (f *keysFake) create(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pc, ok := providerConfig(body["provider_config"])
-	if !ok {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "provider_config: invalid")
-		return
-	}
+	pc := providerConfig(body["provider_config"])
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.created++
@@ -159,8 +147,9 @@ func (f *keysFake) get(w http.ResponseWriter, r *http.Request) {
 }
 
 // update applies Update External Key: the fields sent change (a null
-// display_name clears it), the others stay. Once attached, "the provider
-// fields become effectively immutable": geo and provider_config are refused.
+// display_name clears it), the others stay. ExternalKeyResource.ModifyPlan
+// refuses a geo or provider_config change on an attached key before any
+// request.
 func (f *keysFake) update(w http.ResponseWriter, r *http.Request) {
 	body, ok := f.DecodeBody(w, r)
 	if !ok {
@@ -174,19 +163,8 @@ func (f *keysFake) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	k := f.keys[i]
-	_, geo := body["geo"]
-	_, pcSent := body["provider_config"]
-	if (geo || pcSent) && k["attachment"].(map[string]any)["type"] == "attached" {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "the key is attached to a workspace")
-		return
-	}
-	if pcSent {
-		pc, ok := providerConfig(body["provider_config"])
-		if !ok {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", "provider_config: invalid")
-			return
-		}
-		body["provider_config"] = pc
+	if _, sent := body["provider_config"]; sent {
+		body["provider_config"] = providerConfig(body["provider_config"])
 	}
 	maps.Copy(k, body)
 	k["updated_at"] = "2026-09-30T00:00:00Z"
@@ -194,8 +172,10 @@ func (f *keysFake) update(w http.ResponseWriter, r *http.Request) {
 }
 
 // delete applies Delete External Key: "The request is rejected if any
-// workspace still references this config"; the answer is {"id", "type":
-// "external_key_deleted"}.
+// workspace still references this config"
+// (https://platform.claude.com/docs/en/api/organization/external_keys/delete),
+// which ExternalKeyResource.Delete explains after reading the attachment
+// back (isAttached); the answer is {"id", "type": "external_key_deleted"}.
 func (f *keysFake) delete(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

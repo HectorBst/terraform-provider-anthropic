@@ -241,6 +241,9 @@ func TestServiceAccountWorkspaceResource_apiErrors(t *testing.T) {
 	sa := srv.newAccount("errors", nil, nil)["id"].(string)
 	archived := srv.newAccount("archived", nil, nil)["id"].(string)
 	srv.accounts.Archive(archived)
+	// "Archived service accounts cannot be added and are rejected" (add
+	// reference): the API's 400.
+	srv.FailNextWith(routeAddMembership, http.StatusBadRequest, "service account "+archived+" is archived", 1)
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
