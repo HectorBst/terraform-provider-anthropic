@@ -251,7 +251,7 @@ func hashFile(path string) ([]byte, error) {
 }
 
 func copyFile(dst io.Writer, path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: a file under the configured source_dir, or the configured source_archive
 	if err != nil {
 		return fmt.Errorf("unable to open %q: %w", path, err)
 	}

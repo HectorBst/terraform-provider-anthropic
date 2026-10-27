@@ -332,7 +332,7 @@ func detectMimeType(filename string) string {
 func computeFileHash(path string) (string, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: the user-configured source path, as in uploadFile
 	if err != nil {
 		diags.AddError("Invalid source_path", fmt.Sprintf("Unable to open file %q: %s", path, err))
 		return "", diags

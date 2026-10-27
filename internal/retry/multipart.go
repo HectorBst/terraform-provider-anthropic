@@ -80,7 +80,7 @@ func openFiles(filePaths []string, bundleRoot, dirName string) ([]io.Reader, []*
 			closeAll(opened)
 			return nil, nil, fmt.Errorf("file %q is not inside bundle root %q (relative path: %q)", p, bundleRoot, rel)
 		}
-		f, err := os.Open(p)
+		f, err := os.Open(p) //nolint:gosec // G304: a file of the configured skill bundle, checked to be under bundleRoot above
 		if err != nil {
 			closeAll(opened)
 			return nil, nil, fmt.Errorf("unable to open file %q: %w", p, err)

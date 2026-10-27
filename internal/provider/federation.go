@@ -259,7 +259,7 @@ func commandIdentityToken(argv []string, timeout time.Duration) option.IdentityT
 		defer cancel()
 
 		var stdout, stderr bytes.Buffer
-		cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
+		cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...) //nolint:gosec // G204: the operator's identity_token_command, run without a shell
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		cmd.WaitDelay = identityTokenCommandWaitDelay

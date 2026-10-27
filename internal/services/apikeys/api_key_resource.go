@@ -102,7 +102,7 @@ const apiKeyPrincipalDescription = "The principal the API key acts as: `type = \
 	"or `type = \"service_account_actor\"` with `service_account_id`. " +
 	"Null when the key is not bound to a principal (legacy workspace keys)."
 
-const apiKeyExpiresAtDescription = "RFC 3339 timestamp at which the API key expires, or null if it never expires."
+const apiKeyExpiresAtDescription = "RFC 3339 timestamp at which the API key expires, or null if it never expires." //nolint:gosec // G101: a schema description, not a credential
 
 const apiKeyCreatedByDescription = "The actor that created this API key. `id` and `type` are null when the creator is not recorded " +
 	"(legacy, workload-identity-federated or system-created keys)."
