@@ -53,7 +53,7 @@ func mapFixture(t *testing.T, raw string) WorkspaceResourceModel {
 		t.Fatalf("parse: %v", err)
 	}
 	var data WorkspaceResourceModel
-	if diags := mapWorkspaceToState(context.Background(), &ws, &data); diags.HasError() {
+	if diags := mapWorkspaceToState(&ws, &data); diags.HasError() {
 		t.Fatalf("mapWorkspaceToState: %v", diags)
 	}
 	// The mapped model must fit the resource schema.

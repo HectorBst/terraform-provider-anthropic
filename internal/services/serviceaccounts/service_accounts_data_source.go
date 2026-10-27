@@ -191,12 +191,6 @@ func (d *ServiceAccountsDataSource) Read(ctx context.Context, req datasource.Rea
 // account agree on every attribute (null handling included).
 func mapServiceAccountsListEntry(ctx context.Context, sa *anthropic.BetaServiceAccount) (attr.Value, diag.Diagnostics) {
 	var model ServiceAccountResourceModel
-	diags := mapServiceAccountToState(sa, &model)
-	if diags.HasError() {
-		return types.ObjectNull(serviceAccountAttrTypes), diags
-	}
-
-	obj, d := types.ObjectValueFrom(ctx, serviceAccountAttrTypes, model)
-	diags.Append(d...)
-	return obj, diags
+	mapServiceAccountToState(sa, &model)
+	return types.ObjectValueFrom(ctx, serviceAccountAttrTypes, model)
 }

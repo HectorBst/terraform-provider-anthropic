@@ -115,7 +115,7 @@ func TestMapRefreshResponseToObject_Basic(t *testing.T) {
 	// Set TokenEndpointAuth.Type via the union type field directly
 	refresh.TokenEndpointAuth = anthropic.BetaManagedAgentsMCPOAuthRefreshResponseTokenEndpointAuthUnion{}
 
-	obj, diags := mapRefreshResponseToObject(ctx, refresh)
+	obj, diags := mapRefreshResponseToObject(refresh)
 	if diags.HasError() {
 		t.Fatalf("mapRefreshResponseToObject: %v", diags)
 	}

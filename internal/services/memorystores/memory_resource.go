@@ -16,7 +16,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/packages/respjson"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -267,10 +266,7 @@ func (r *MemoryResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	resp.Diagnostics.Append(mapMemoryToState(memory, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	mapMemoryToState(memory, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -300,10 +296,7 @@ func (r *MemoryResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	priorContent := data.Content
 
-	resp.Diagnostics.Append(mapMemoryToState(memory, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	mapMemoryToState(memory, &data)
 
 	// With View: full the API always populates content, but guard against a
 	// basic-view response (content explicitly null) clobbering state with an
@@ -364,10 +357,7 @@ func (r *MemoryResource) Update(ctx context.Context, req resource.UpdateRequest,
 
 	awaitMemoryUpdateVisible(ctx, r.client, state.MemoryStoreID.ValueString(), state.ID.ValueString(), memory.UpdatedAt, memory.ContentSha256, memoryConsistencyTimeout, memoryConsistencyInterval)
 
-	resp.Diagnostics.Append(mapMemoryToState(memory, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	mapMemoryToState(memory, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -511,7 +501,7 @@ func parseMemoryImportID(id string) (memoryStoreID, memoryID string, err error) 
 // BetaManagedAgentsMemory whose JSON.Content validity flag was never set by
 // an unmarshal). The one case where the API's response genuinely omits
 // content is handled by the caller (Read's priorContent fallback), not here.
-func mapMemoryToState(memory *anthropic.BetaManagedAgentsMemory, data *MemoryResourceModel) diag.Diagnostics {
+func mapMemoryToState(memory *anthropic.BetaManagedAgentsMemory, data *MemoryResourceModel) {
 	common := mapMemoryCommon(memory)
 
 	data.ID = common.ID
@@ -524,6 +514,4 @@ func mapMemoryToState(memory *anthropic.BetaManagedAgentsMemory, data *MemoryRes
 	data.Type = common.Type
 	data.CreatedAt = common.CreatedAt
 	data.UpdatedAt = common.UpdatedAt
-
-	return nil
 }

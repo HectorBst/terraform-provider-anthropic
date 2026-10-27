@@ -1399,7 +1399,7 @@ func mapCredentialResponseToState(ctx context.Context, cred *anthropic.BetaManag
 		}
 		// Map refresh (non-secret fields only) — Refresh is a flat field on the union struct.
 		if cred.Auth.JSON.Refresh.Valid() {
-			refreshObj, d := mapRefreshResponseToObject(ctx, cred.Auth.Refresh)
+			refreshObj, d := mapRefreshResponseToObject(cred.Auth.Refresh)
 			diags.Append(d...)
 			data.Refresh = refreshObj
 		} else {
@@ -1431,7 +1431,7 @@ func mapCredentialResponseToState(ctx context.Context, cred *anthropic.BetaManag
 
 // mapRefreshResponseToObject maps a BetaManagedAgentsMCPOAuthRefreshResponse to a types.Object.
 // refresh_token is write-only and client_secret is never in the response, so both are null.
-func mapRefreshResponseToObject(ctx context.Context, refresh anthropic.BetaManagedAgentsMCPOAuthRefreshResponse) (types.Object, diag.Diagnostics) {
+func mapRefreshResponseToObject(refresh anthropic.BetaManagedAgentsMCPOAuthRefreshResponse) (types.Object, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	teaType := refresh.TokenEndpointAuth.Type

@@ -17,11 +17,17 @@ import (
 )
 
 // newStaleRoleListServer serves GET
-// /v1/organizations/service_accounts/{svac}/workspaces with the membership at
-// oldRole for the first staleLists calls, then at newRole forever after. It
-// returns a pointer to the List counter.
-func newStaleRoleListServer(t *testing.T, serviceAccountID, workspaceID, oldRole, newRole string, staleLists int) (*httptest.Server, *int) {
+// /v1/organizations/service_accounts/svac_01ABC/workspaces with the membership
+// in wrkspc_01XYZ at workspace_developer for the first staleLists calls, then
+// at workspace_admin forever after. It returns a pointer to the List counter.
+func newStaleRoleListServer(t *testing.T, staleLists int) (*httptest.Server, *int) {
 	t.Helper()
+	const (
+		serviceAccountID = "svac_01ABC"
+		workspaceID      = "wrkspc_01XYZ"
+		oldRole          = "workspace_developer"
+		newRole          = "workspace_admin"
+	)
 
 	lists := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +54,7 @@ func newStaleRoleListServer(t *testing.T, serviceAccountID, workspaceID, oldRole
 // A list still showing the pre-update role right after a successful write
 // would make the next plan propose the role change again.
 func TestAwaitServiceAccountWorkspaceRoleVisible_pollsUntilVisible(t *testing.T) {
-	srv, lists := newStaleRoleListServer(t, "svac_01ABC", "wrkspc_01XYZ", "workspace_developer", "workspace_admin", 3)
+	srv, lists := newStaleRoleListServer(t, 3)
 	client := oauthtest.NewClient(t, srv, option.WithMaxRetries(0))
 
 	awaitServiceAccountWorkspaceRoleVisible(context.Background(), client, "svac_01ABC", "wrkspc_01XYZ", "workspace_admin", 2*time.Second, time.Millisecond)
@@ -60,7 +66,7 @@ func TestAwaitServiceAccountWorkspaceRoleVisible_pollsUntilVisible(t *testing.T)
 
 // A list that already reflects the write must not be polled a second time.
 func TestAwaitServiceAccountWorkspaceRoleVisible_returnsImmediatelyWhenVisible(t *testing.T) {
-	srv, lists := newStaleRoleListServer(t, "svac_01ABC", "wrkspc_01XYZ", "workspace_developer", "workspace_admin", 0)
+	srv, lists := newStaleRoleListServer(t, 0)
 	client := oauthtest.NewClient(t, srv, option.WithMaxRetries(0))
 
 	awaitServiceAccountWorkspaceRoleVisible(context.Background(), client, "svac_01ABC", "wrkspc_01XYZ", "workspace_admin", 2*time.Second, time.Millisecond)
@@ -73,7 +79,7 @@ func TestAwaitServiceAccountWorkspaceRoleVisible_returnsImmediatelyWhenVisible(t
 // The wait is best-effort: a role that never shows up must return at the
 // timeout rather than hang or surface an error, since the write succeeded.
 func TestAwaitServiceAccountWorkspaceRoleVisible_givesUpAtTimeout(t *testing.T) {
-	srv, lists := newStaleRoleListServer(t, "svac_01ABC", "wrkspc_01XYZ", "workspace_developer", "workspace_admin", 1_000_000)
+	srv, lists := newStaleRoleListServer(t, 1_000_000)
 	client := oauthtest.NewClient(t, srv, option.WithMaxRetries(0))
 
 	start := time.Now()
@@ -136,7 +142,7 @@ func TestAwaitServiceAccountWorkspaceRoleVisible_stopsOnTerminalReadError(t *tes
 
 // A cancelled context must abort the wait promptly.
 func TestAwaitServiceAccountWorkspaceRoleVisible_honoursContextCancellation(t *testing.T) {
-	srv, _ := newStaleRoleListServer(t, "svac_01ABC", "wrkspc_01XYZ", "workspace_developer", "workspace_admin", 1_000_000)
+	srv, _ := newStaleRoleListServer(t, 1_000_000)
 	client := oauthtest.NewClient(t, srv, option.WithMaxRetries(0))
 
 	ctx, cancel := context.WithCancel(context.Background())

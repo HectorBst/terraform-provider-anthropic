@@ -14,7 +14,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -196,10 +195,7 @@ func (r *ServiceAccountResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 
-	resp.Diagnostics.Append(mapServiceAccountToState(sa, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	mapServiceAccountToState(sa, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -226,10 +222,7 @@ func (r *ServiceAccountResource) Read(ctx context.Context, req resource.ReadRequ
 		return
 	}
 
-	resp.Diagnostics.Append(mapServiceAccountToState(sa, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	mapServiceAccountToState(sa, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -321,10 +314,7 @@ func (r *ServiceAccountResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 
-	resp.Diagnostics.Append(mapServiceAccountToState(sa, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	mapServiceAccountToState(sa, &plan)
 
 	awaitServiceAccountUpdateVisible(ctx, r.client, state.ID.ValueString(), sa.UpdatedAt, serviceAccountConsistencyTimeout, serviceAccountConsistencyInterval)
 
@@ -406,9 +396,7 @@ func buildServiceAccountUpdateParams(plan, state *ServiceAccountResourceModel) a
 }
 
 // mapServiceAccountToState maps the API response to the Terraform state model.
-func mapServiceAccountToState(sa *anthropic.BetaServiceAccount, data *ServiceAccountResourceModel) diag.Diagnostics {
-	var diags diag.Diagnostics
-
+func mapServiceAccountToState(sa *anthropic.BetaServiceAccount, data *ServiceAccountResourceModel) {
 	data.ID = types.StringValue(sa.ID)
 	data.Name = types.StringValue(sa.Name)
 	data.OrganizationRole = types.StringValue(string(sa.OrganizationRole))
@@ -421,8 +409,6 @@ func mapServiceAccountToState(sa *anthropic.BetaServiceAccount, data *ServiceAcc
 	data.ArchivedByActorID = tfvalue.StringOrNull(sa.ArchivedByActorID)
 
 	data.ArchivedAt = tfvalue.TimeOrNull(sa.ArchivedAt)
-
-	return diags
 }
 
 // descriptionOrNull maps the API's description the same way stringOrNull

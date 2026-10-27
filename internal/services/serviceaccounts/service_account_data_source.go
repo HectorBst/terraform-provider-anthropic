@@ -125,10 +125,7 @@ func (d *ServiceAccountDataSource) Read(ctx context.Context, req datasource.Read
 	// data.Description is null here (only id comes from config), so the
 	// resource mapper's "echo a configured empty description" rule never
 	// fires: an API "" surfaces as null, as a data source should report it.
-	resp.Diagnostics.Append(mapServiceAccountToState(sa, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	mapServiceAccountToState(sa, &data)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

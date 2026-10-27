@@ -10,9 +10,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func workspacesListFixture(id, name string, archivedAt *string) workspaceAPIResponse {
+// workspacesListFixture is the API entry of workspace wrkspc_01.
+func workspacesListFixture(name string, archivedAt *string) workspaceAPIResponse {
 	return workspaceAPIResponse{
-		ID:           id,
+		ID:           "wrkspc_01",
 		Name:         name,
 		ArchivedAt:   archivedAt,
 		CreatedAt:    "2026-01-01T00:00:00Z",
@@ -51,7 +52,7 @@ func TestBuildWorkspacesListQuery(t *testing.T) {
 
 func TestMapWorkspaceToListObject_archivedAt(t *testing.T) {
 	archived := "2026-04-01T00:00:00Z"
-	ws := workspacesListFixture("wrkspc_01", "archived", &archived)
+	ws := workspacesListFixture("archived", &archived)
 
 	obj, diags := mapWorkspaceToListObject(&ws)
 	if diags.HasError() {
@@ -63,7 +64,7 @@ func TestMapWorkspaceToListObject_archivedAt(t *testing.T) {
 }
 
 func TestMapWorkspaceToListObject_noArchivedAt(t *testing.T) {
-	ws := workspacesListFixture("wrkspc_01", "active", nil)
+	ws := workspacesListFixture("active", nil)
 
 	obj, diags := mapWorkspaceToListObject(&ws)
 	if diags.HasError() {
@@ -76,7 +77,7 @@ func TestMapWorkspaceToListObject_noArchivedAt(t *testing.T) {
 
 func TestMapWorkspaceToListObject_tagsKeyAndRetention(t *testing.T) {
 	key, comp, prof := "ekey_01", "comp-1", "uprof_01"
-	ws := workspacesListFixture("wrkspc_01", "full", nil)
+	ws := workspacesListFixture("full", nil)
 	ws.Tags = map[string]string{"env": "prod"}
 	ws.ExternalKeyID = key
 	ws.CompartmentID = comp
@@ -102,7 +103,7 @@ func TestMapWorkspaceToListObject_tagsKeyAndRetention(t *testing.T) {
 }
 
 func TestMapWorkspaceToListObject_tagsKeyAndRetentionAbsent(t *testing.T) {
-	ws := workspacesListFixture("wrkspc_01", "bare", nil)
+	ws := workspacesListFixture("bare", nil)
 
 	obj, diags := mapWorkspaceToListObject(&ws)
 	if diags.HasError() {

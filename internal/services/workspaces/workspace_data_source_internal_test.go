@@ -43,8 +43,7 @@ func TestWorkspaceDataSource_read(t *testing.T) {
 	var data WorkspaceResourceModel
 	data.ID = types.StringValue(ws.ID)
 
-	ctx := context.Background()
-	diags := mapWorkspaceToState(ctx, &ws, &data)
+	diags := mapWorkspaceToState(&ws, &data)
 	if diags.HasError() {
 		t.Fatalf("mapWorkspaceToState errors: %v", diags)
 	}
@@ -78,7 +77,7 @@ func TestWorkspaceDataSource_mapsTagsKeyAndRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	var data WorkspaceResourceModel
-	if diags := mapWorkspaceToState(context.Background(), &ws, &data); diags.HasError() {
+	if diags := mapWorkspaceToState(&ws, &data); diags.HasError() {
 		t.Fatalf("diags: %v", diags)
 	}
 	if data.CompartmentID.ValueString() == "" || data.Tags.IsNull() || data.InferenceDataRetention.IsNull() {

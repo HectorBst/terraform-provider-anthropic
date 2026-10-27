@@ -111,7 +111,7 @@ var agentMultiagentAttrTypes = map[string]attr.Type{
 
 // multiagentMemberSchema is the `subagents` or `workflows` attribute of the
 // resource's multiagent object.
-func multiagentMemberSchema(name, description string) schema.SingleNestedAttribute {
+func multiagentMemberSchema(description string) schema.SingleNestedAttribute {
 	return schema.SingleNestedAttribute{
 		Optional:            true,
 		MarkdownDescription: description,

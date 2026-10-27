@@ -151,7 +151,7 @@ func (d *WorkspaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	resp.Diagnostics.Append(mapWorkspaceToState(ctx, &ws, &data)...)
+	resp.Diagnostics.Append(mapWorkspaceToState(&ws, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}

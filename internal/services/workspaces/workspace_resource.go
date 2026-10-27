@@ -325,7 +325,7 @@ func (r *WorkspaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	resp.Diagnostics.Append(mapWorkspaceToState(ctx, &ws, &data)...)
+	resp.Diagnostics.Append(mapWorkspaceToState(&ws, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -364,7 +364,7 @@ func (r *WorkspaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	resp.Diagnostics.Append(mapWorkspaceToState(ctx, &ws, &data)...)
+	resp.Diagnostics.Append(mapWorkspaceToState(&ws, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -418,7 +418,7 @@ func (r *WorkspaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	resp.Diagnostics.Append(mapWorkspaceToState(ctx, &ws, &data)...)
+	resp.Diagnostics.Append(mapWorkspaceToState(&ws, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -538,7 +538,7 @@ func buildUpdateDataResidency(ctx context.Context, obj types.Object) (*workspace
 }
 
 // mapWorkspaceToState maps an API workspace response to the Terraform state model.
-func mapWorkspaceToState(ctx context.Context, ws *workspaceAPIResponse, data *WorkspaceResourceModel) diag.Diagnostics {
+func mapWorkspaceToState(ws *workspaceAPIResponse, data *WorkspaceResourceModel) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	data.ID = types.StringValue(ws.ID)

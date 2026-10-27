@@ -39,9 +39,10 @@ func workspacesObject(t *testing.T, typ string, ids ...string) types.Object {
 	})
 }
 
-func tracesObject(contentMode string, endpointURL types.String, maxBytes types.Int64) types.Object {
+// tracesObject is an enabled traces block in the metadata_only content mode.
+func tracesObject(endpointURL types.String, maxBytes types.Int64) types.Object {
 	return types.ObjectValueMust(tracesAttrTypes, map[string]attr.Value{
-		"content_mode":      types.StringValue(contentMode),
+		"content_mode":      types.StringValue(contentModeMetadataOnly),
 		"enabled":           types.BoolValue(true),
 		"endpoint_url":      endpointURL,
 		"max_content_bytes": maxBytes,
@@ -74,7 +75,7 @@ func plannedDestination(t *testing.T) TelemetryDestinationResourceModel {
 		Enabled:          types.BoolValue(true),
 		DisabledReason:   types.StringUnknown(),
 		Workspaces:       workspacesObject(t, "include", "wrkspc_b", "wrkspc_a"),
-		Traces:           tracesObject("metadata_only", types.StringNull(), types.Int64Unknown()),
+		Traces:           tracesObject(types.StringNull(), types.Int64Unknown()),
 		HeadersWO:        types.MapNull(types.StringType),
 		HeadersWOVersion: types.Int64Value(1),
 		HeaderNames:      types.SetUnknown(types.StringType),
@@ -90,7 +91,7 @@ func storedDestination(t *testing.T) TelemetryDestinationResourceModel {
 	m := plannedDestination(t)
 	m.ID = types.StringValue(testDestinationID)
 	m.DisabledReason = types.StringNull()
-	m.Traces = tracesObject("metadata_only", types.StringNull(), types.Int64Null())
+	m.Traces = tracesObject(types.StringNull(), types.Int64Null())
 	m.HeaderNames = types.SetValueMust(types.StringType, stringValues([]string{"authorization"}))
 	m.DeliveryHealth = types.ObjectValueMust(deliveryHealthAttrTypes, map[string]attr.Value{
 		"last_error":      types.StringNull(),
@@ -420,10 +421,10 @@ func TestTelemetryDestinationResource_UpdateHostChangeResendsHeaders(t *testing.
 	t.Parallel()
 
 	state := storedDestination(t)
-	state.Traces = tracesObject("metadata_only", types.StringValue("https://gateway.example.com/custom/traces"), types.Int64Null())
+	state.Traces = tracesObject(types.StringValue("https://gateway.example.com/custom/traces"), types.Int64Null())
 	plan := updatePlan(state)
 	plan.EndpointURL = types.StringValue("https://collector.example.org/otlp")
-	plan.Traces = tracesObject("metadata_only", types.StringValue("https://collector.example.org/custom/traces"), types.Int64Null())
+	plan.Traces = tracesObject(types.StringValue("https://collector.example.org/custom/traces"), types.Int64Null())
 	plan.HeaderNames = types.SetUnknown(types.StringType)
 
 	api, _ := runUpdate(t, state, plan, headersMap(map[string]string{"authorization": testHeaderValue}), okDestination(t))
@@ -779,7 +780,7 @@ func TestTracesFollowEndpointHost(t *testing.T) {
 
 	r := &TelemetryDestinationResource{}
 	stored := storedDestination(t)
-	stored.Traces = tracesObject("metadata_only", types.StringValue("https://gateway.example.com/custom/traces"), types.Int64Null())
+	stored.Traces = tracesObject(types.StringValue("https://gateway.example.com/custom/traces"), types.Int64Null())
 	omittedBlock := func(endpoint types.String) TelemetryDestinationResourceModel {
 		m := updatePlan(stored)
 		m.EndpointURL = endpoint
@@ -787,9 +788,9 @@ func TestTracesFollowEndpointHost(t *testing.T) {
 		return m
 	}
 	setBlock := omittedBlock(types.StringValue("https://collector.example.org/otlp"))
-	setBlock.Traces = tracesObject("metadata_only", types.StringValue("https://collector.example.org/custom/traces"), types.Int64Null())
+	setBlock.Traces = tracesObject(types.StringValue("https://collector.example.org/custom/traces"), types.Int64Null())
 	noStoredURL := stored
-	noStoredURL.Traces = tracesObject("metadata_only", types.StringNull(), types.Int64Null())
+	noStoredURL.Traces = tracesObject(types.StringNull(), types.Int64Null())
 
 	for name, tc := range map[string]struct {
 		state       TelemetryDestinationResourceModel
@@ -837,7 +838,7 @@ func TestTelemetryDestinationResource_UpdateHostChangeClearsUnmanagedTracesURL(t
 	t.Parallel()
 
 	state := storedDestination(t)
-	state.Traces = tracesObject("metadata_only", types.StringValue("https://gateway.example.com/custom/traces"), types.Int64Null())
+	state.Traces = tracesObject(types.StringValue("https://gateway.example.com/custom/traces"), types.Int64Null())
 	plan := updatePlan(state)
 	plan.EndpointURL = types.StringValue("https://collector.example.org/otlp")
 	plan.Traces = types.ObjectUnknown(tracesAttrTypes) // tracesFollowEndpointHost
@@ -948,7 +949,7 @@ func TestTelemetryDestinationResource_CreateKeepsURLSpelling(t *testing.T) {
 
 	plan := plannedDestination(t)
 	plan.EndpointURL = types.StringValue("https://Gateway.example.com:443/otlp/")
-	plan.Traces = tracesObject("metadata_only", types.StringValue("https://GATEWAY.example.com/custom/traces/"), types.Int64Unknown())
+	plan.Traces = tracesObject(types.StringValue("https://GATEWAY.example.com/custom/traces/"), types.Int64Unknown())
 	cfg := toConfig(t, r, plan, types.MapNull(types.StringType))
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: cfg.Schema}}
 	r.Create(context.Background(), resource.CreateRequest{Plan: toPlan(t, r, plan), Config: cfg}, &resp)

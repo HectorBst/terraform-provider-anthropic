@@ -30,12 +30,12 @@ func newPluginModel() PluginResourceModel {
 }
 
 // statePluginModel is a managed plugin as state holds it after a refresh of
-// pluginJSON(servedVersionID, pinned), created from sourceDir.
-func statePluginModel(t *testing.T, sourceDir, servedVersionID string, pinned bool) PluginResourceModel {
+// pluginJSON("pluginver_02", pinned), created from sourceDir.
+func statePluginModel(t *testing.T, sourceDir string, pinned bool) PluginResourceModel {
 	t.Helper()
 	m := newPluginModel()
 	m.SourceDir = types.StringValue(sourceDir)
-	p, err := decodePlugin([]byte(pluginJSON(servedVersionID, pinned)))
+	p, err := decodePlugin([]byte(pluginJSON("pluginver_02", pinned)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestPluginResource_Read(t *testing.T) {
 		"GET /v1/organizations/plugins/plugin_01": {ok(pluginJSON("pluginver_01", true))},
 	})
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 
 	resp := resource.ReadResponse{State: stateOf(t, r, prior)}
 	r.Read(context.Background(), resource.ReadRequest{State: stateOf(t, r, prior)}, &resp)
@@ -304,7 +304,7 @@ func TestPluginResource_ReadRemovesADeletedPlugin(t *testing.T) {
 		"GET /v1/organizations/plugins/plugin_01": {apiError(http.StatusNotFound, "not_found_error", "not found", "", nil)},
 	})
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 
 	resp := resource.ReadResponse{State: stateOf(t, r, prior)}
 	r.Read(context.Background(), resource.ReadRequest{State: stateOf(t, r, prior)}, &resp)
@@ -336,7 +336,7 @@ func TestPluginResource_UpdateServesAnotherVersion(t *testing.T) {
 		"POST /v1/organizations/plugins/plugin_01": {ok(pluginJSON("pluginver_01", true))},
 	})
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", true)
+	prior := statePluginModel(t, "/plugins/sales", true)
 	plan := prior
 	plan.ServedVersionID = types.StringValue("pluginver_01")
 
@@ -360,7 +360,7 @@ func TestPluginResource_UpdatePinsTheVersionAlreadyServed(t *testing.T) {
 		"POST /v1/organizations/plugins/plugin_01": {ok(pluginJSON("pluginver_02", true))},
 	})
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 	plan := prior
 	plan.ServedVersionPinned = types.BoolValue(true)
 
@@ -377,7 +377,7 @@ func TestPluginResource_UpdateOfACreateOnlyInputCallsNothing(t *testing.T) {
 	t.Parallel()
 	client, requests := fakePluginsAPI(t, nil)
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 	plan := prior
 	plan.SourceDir = types.StringValue("/plugins/sales-v2")
 	plan.ReleaseNotes = types.StringValue("Edited")
@@ -415,7 +415,7 @@ func TestPluginResource_UpdateExplainsAPendingScan(t *testing.T) {
 			`{"error_code":"scan_pending","plugin_version_id":"pluginver_01"}`, nil)},
 	})
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", true)
+	prior := statePluginModel(t, "/plugins/sales", true)
 	plan := prior
 	plan.ServedVersionID = types.StringValue("pluginver_01")
 
@@ -437,7 +437,7 @@ func TestPluginResource_Delete(t *testing.T) {
 				"DELETE /v1/organizations/plugins/plugin_01": {answer},
 			})
 			r := &PluginResource{client: client}
-			prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+			prior := statePluginModel(t, "/plugins/sales", false)
 
 			var resp resource.DeleteResponse
 			r.Delete(context.Background(), resource.DeleteRequest{State: stateOf(t, r, prior)}, &resp)
@@ -456,7 +456,7 @@ func TestPluginResource_DeleteSurfacesAGitSyncedPlugin(t *testing.T) {
 			"plugin is synchronized from a repository", "", nil)},
 	})
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 
 	var resp resource.DeleteResponse
 	r.Delete(context.Background(), resource.DeleteRequest{State: stateOf(t, r, prior)}, &resp)
@@ -502,7 +502,7 @@ func TestPluginResource_ModifyPlanRequiresASourceToCreate(t *testing.T) {
 
 func TestPluginResource_ModifyPlanAllowsAnImportedPluginWithoutSource(t *testing.T) {
 	t.Parallel()
-	prior := statePluginModel(t, "", "pluginver_02", false)
+	prior := statePluginModel(t, "", false)
 	prior.SourceDir = types.StringNull()
 	config := newPluginModel()
 
@@ -514,7 +514,7 @@ func TestPluginResource_ModifyPlanAllowsAnImportedPluginWithoutSource(t *testing
 
 func TestPluginResource_ModifyPlanPinsAConfiguredServedVersion(t *testing.T) {
 	t.Parallel()
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 	config := newPluginModel()
 	config.SourceDir = types.StringValue("/plugins/sales")
 	config.ServedVersionID = types.StringValue("pluginver_02")
@@ -547,7 +547,7 @@ func TestPluginResource_ModifyPlanPinsAConfiguredServedVersion(t *testing.T) {
 
 func TestPluginResource_ModifyPlanWarnsOnCreateOnlyChanges(t *testing.T) {
 	t.Parallel()
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 	config := newPluginModel()
 	config.SourceDir = types.StringValue("/plugins/sales-v2")
 
@@ -608,7 +608,7 @@ func TestPluginResource_ModifyPlanPinningLeavesUpdatedAtUnknown(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			prior := statePluginModel(t, "", "pluginver_02", tc.pinned)
+			prior := statePluginModel(t, "", tc.pinned)
 			prior.SourceDir = types.StringNull() // an imported plugin
 			config := newPluginModel()
 			config.ServedVersionID = tc.servedVersion
@@ -661,7 +661,7 @@ func assertAppliedAsPlanned(t *testing.T, plan tfsdk.Plan, state tfsdk.State) {
 // planned unknown until the value is known.
 func TestPluginResource_ModifyPlanLeavesThePinOpenForAnUnknownServedVersion(t *testing.T) {
 	t.Parallel()
-	unpinned := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	unpinned := statePluginModel(t, "/plugins/sales", false)
 	for name, prior := range map[string]*PluginResourceModel{"create": nil, "unpinned plugin": &unpinned} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -695,7 +695,7 @@ func TestPluginResource_PinAppliesOnAPluginChangedSinceThePlan(t *testing.T) {
 		"POST /v1/organizations/plugins/plugin_01": {ok(changed)},
 	})
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 	config := newPluginModel()
 	config.SourceDir = types.StringValue("/plugins/sales")
 	config.ServedVersionID = types.StringValue("pluginver_02")
@@ -729,7 +729,7 @@ func TestPluginResource_IgnoredServedVersionNeitherPinsNorFails(t *testing.T) {
 	t.Parallel()
 	client, requests := fakePluginsAPI(t, nil)
 	r := &PluginResource{client: client}
-	prior := statePluginModel(t, "/plugins/sales", "pluginver_02", false)
+	prior := statePluginModel(t, "/plugins/sales", false)
 
 	// The configuration Terraform plans with: served_version_id is ignored,
 	// so it holds the prior value.

@@ -512,11 +512,11 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							"(`subagents`, `workflows` and `advisor`, each turned on or off on its own).",
 						Validators: []validator.String{stringvalidator.OneOf(multiagentTypeCoordinator, multiagentType20261001)},
 					},
-					"subagents": multiagentMemberSchema("subagents",
-						"`multiagent_20261001` only. Delegation to subagents, each running in its own session thread (one level deep, at most 25 child threads at a time). "+
+					"subagents": multiagentMemberSchema(
+						"`multiagent_20261001` only. Delegation to subagents, each running in its own session thread (one level deep, at most 25 child threads at a time). " +
 							"Omitted, it takes the API default: enabled, with inline agents."),
-					"workflows": multiagentMemberSchema("workflows",
-						"`multiagent_20261001` only. Dynamic workflows: programs the agent writes, which the server runs in the background with many agents. "+
+					"workflows": multiagentMemberSchema(
+						"`multiagent_20261001` only. Dynamic workflows: programs the agent writes, which the server runs in the background with many agents. " +
 							"Omitted, it takes the API default: enabled, with inline agents."),
 					"advisor": schema.SingleNestedAttribute{
 						Optional: true,

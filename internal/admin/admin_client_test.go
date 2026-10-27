@@ -321,12 +321,12 @@ func TestAdminClient_doRequest_successReturnsBody(t *testing.T) {
 
 // --- retry ---
 
-// newRetryingTestClient returns a client with retries enabled and backoff
-// delays short enough to keep the suite fast.
-func newRetryingTestClient(t *testing.T, srv *httptest.Server, maxRetries int) *Client {
+// newRetryingTestClient returns a client with two retries and backoff delays
+// short enough to keep the suite fast.
+func newRetryingTestClient(t *testing.T, srv *httptest.Server) *Client {
 	t.Helper()
 	c := newTestAdminClient(t, srv)
-	c.MaxRetries = maxRetries
+	c.MaxRetries = 2
 	c.BaseRetryDelay = time.Millisecond
 	c.MaxRetryDelay = 4 * time.Millisecond
 	return c
@@ -354,7 +354,7 @@ func TestAdminClient_doRequest_retriesTransientStatuses(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			body, err := newRetryingTestClient(t, srv, 2).
+			body, err := newRetryingTestClient(t, srv).
 				DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -384,7 +384,7 @@ func TestAdminClient_doRequest_doesNotRetryClientErrors(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			_, err := newRetryingTestClient(t, srv, 2).
+			_, err := newRetryingTestClient(t, srv).
 				DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil)
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -425,7 +425,7 @@ func TestAdminClient_doRequest_exhaustsRetriesAndReturnsLastError(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	_, err := newRetryingTestClient(t, srv, 2).
+	_, err := newRetryingTestClient(t, srv).
 		DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -457,7 +457,7 @@ func TestAdminClient_doRequest_honoursXShouldRetryHeader(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		if _, err := newRetryingTestClient(t, srv, 2).
+		if _, err := newRetryingTestClient(t, srv).
 			DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -475,7 +475,7 @@ func TestAdminClient_doRequest_honoursXShouldRetryHeader(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		if _, err := newRetryingTestClient(t, srv, 2).
+		if _, err := newRetryingTestClient(t, srv).
 			DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil); err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -500,7 +500,7 @@ func TestAdminClient_doRequest_replaysBodyOnRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := newRetryingTestClient(t, srv, 2).
+	_, err := newRetryingTestClient(t, srv).
 		DoRequest(context.Background(), "POST", "/v1/organizations/workspaces", map[string]string{"name": "x"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -579,7 +579,7 @@ func TestAdminClient_doRequest_doesNotReplayPostOnAmbiguousFailures(t *testing.T
 			}))
 			defer srv.Close()
 
-			_, err := newRetryingTestClient(t, srv, 2).DoRequest(
+			_, err := newRetryingTestClient(t, srv).DoRequest(
 				context.Background(), "POST", "/v1/organizations/workspaces", map[string]string{"name": "x"})
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -602,7 +602,7 @@ func TestAdminClient_doRequest_doesNotReplayPostOnADroppedConnection(t *testing.
 	}))
 	defer srv.Close()
 
-	_, err := newRetryingTestClient(t, srv, 2).DoRequest(
+	_, err := newRetryingTestClient(t, srv).DoRequest(
 		context.Background(), "POST", "/v1/organizations/workspaces", map[string]string{"name": "x"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -627,7 +627,7 @@ func TestAdminClient_doRequest_retriesATruncatedResponseBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	body, err := newRetryingTestClient(t, srv, 2).
+	body, err := newRetryingTestClient(t, srv).
 		DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -912,7 +912,7 @@ func TestAdminClient_doRequest_doesNotRetryRequestConstructionErrors(t *testing.
 	defer srv.Close()
 
 	// A space is not a valid token in an HTTP method, so the request never leaves.
-	_, err := newRetryingTestClient(t, srv, 2).
+	_, err := newRetryingTestClient(t, srv).
 		DoRequest(context.Background(), "BAD METHOD", "/v1/organizations/workspaces", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")

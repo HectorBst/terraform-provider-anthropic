@@ -33,9 +33,9 @@ func newGatewaySDKClient(baseURL string, opts ...option.RequestOption) *anthropi
 }
 
 // newRetryingSDKTestClient is newRetryingTestClient over an SDK client.
-func newRetryingSDKTestClient(baseURL string, maxRetries int, opts ...option.RequestOption) *Client {
+func newRetryingSDKTestClient(baseURL string, opts ...option.RequestOption) *Client {
 	c := NewSDKClient(newGatewaySDKClient(baseURL, opts...))
-	c.MaxRetries = maxRetries
+	c.MaxRetries = 2
 	c.BaseRetryDelay = time.Millisecond
 	c.MaxRetryDelay = 4 * time.Millisecond
 	return c
@@ -148,7 +148,7 @@ func TestSDKClient_keepsThePostRetryPolicy(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			_, err := newRetryingSDKTestClient(srv.URL, 2).DoRequest(
+			_, err := newRetryingSDKTestClient(srv.URL).DoRequest(
 				context.Background(), tt.method, "/v1/organizations/workspaces", map[string]string{"name": "x"})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("err = %v, want error %v", err, tt.wantErr)
@@ -168,7 +168,7 @@ func TestSDKClient_doesNotReplayPostOnADroppedConnection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := newRetryingSDKTestClient(srv.URL, 2).DoRequest(
+	_, err := newRetryingSDKTestClient(srv.URL).DoRequest(
 		context.Background(), "POST", "/v1/organizations/workspaces", map[string]string{"name": "x"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -195,7 +195,7 @@ func TestSDKClient_boundsEachAttempt(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c := newRetryingSDKTestClient(srv.URL, 2)
+			c := newRetryingSDKTestClient(srv.URL)
 			c.sdkAttemptTimeout = 50 * time.Millisecond
 			// Without a per-attempt bound, only this deadline ends the call.
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -223,7 +223,7 @@ func TestSDKClient_honoursXShouldRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := newRetryingSDKTestClient(srv.URL, 2).DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil); err == nil {
+	if _, err := newRetryingSDKTestClient(srv.URL).DoRequest(context.Background(), "GET", "/v1/organizations/workspaces", nil); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if got := calls.Load(); got != 1 {
@@ -290,7 +290,7 @@ func TestSDKClient_gateway404IsNotADeletion(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := newRetryingSDKTestClient(srv.URL, 2, option.WithMiddleware(platform.NotFoundGuard(platform.AWS)))
+	c := newRetryingSDKTestClient(srv.URL, option.WithMiddleware(platform.NotFoundGuard(platform.AWS)))
 	_, err := c.DoRequest(context.Background(), "GET", "/v1/organizations/workspaces/wrkspc_1", nil)
 
 	if IsNotFound(err) {

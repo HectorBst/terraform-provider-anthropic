@@ -37,10 +37,7 @@ func TestMapMemoryToState(t *testing.T) {
 	}
 
 	var data MemoryResourceModel
-	diags := mapMemoryToState(memory, &data)
-	if diags.HasError() {
-		t.Fatalf("unexpected diagnostics: %v", diags)
-	}
+	mapMemoryToState(memory, &data)
 
 	if data.ID.ValueString() != "mem_01ABC" {
 		t.Errorf("expected ID mem_01ABC, got %s", data.ID.ValueString())
