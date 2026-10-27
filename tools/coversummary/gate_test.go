@@ -5,12 +5,15 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 // The fixtures in testdata are a profile of a module example.com/m and a
@@ -415,5 +418,118 @@ func TestPackagesOf(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("packages %+v, want %+v", got, want)
+	}
+}
+
+var update = flag.Bool("update", false, "rewrite the golden reports in testdata")
+
+// TestGateReportGolden compares whole reports with testdata/gate-*.golden,
+// so that a change to the report shows in review. go test -run
+// TestGateReportGolden -update rewrites them.
+func TestGateReportGolden(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		edit         func(string) string
+		baseline     string
+		baseBaseline string
+		diff         string // "" for testdata/change.diff, "none" for no diff
+	}{
+		{name: "pass", baseline: "60.00"},
+		{name: "fail", edit: func(s string) string { return packageMin("70")(set("total_target", "65")(s)) }, baseline: "64.00", baseBaseline: "65.00"},
+		{name: "ratchet", baseline: "67.20", baseBaseline: "68.00", diff: "none"},
+		{name: "nostatement", baseline: "60.00", diff: "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-a\n+b\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := gateFixture(t, tc.edit, tc.baseline)
+			switch tc.diff {
+			case "":
+			case "none":
+				opts.diffPath = ""
+			default:
+				opts.diffPath = filepath.Join(t.TempDir(), "change.diff")
+				write(t, opts.diffPath, tc.diff)
+			}
+			if tc.baseBaseline != "" {
+				opts.baseBaseline = filepath.Join(t.TempDir(), "base")
+				write(t, opts.baseBaseline, tc.baseBaseline+"\n")
+			}
+			out, err := runGate(t, opts)
+			if err != nil && !errors.Is(err, errGateFailed) {
+				t.Fatal(err)
+			}
+			golden := filepath.Join("testdata", "gate-"+tc.name+".golden")
+			if *update {
+				write(t, golden, out)
+			}
+			want, err := os.ReadFile(golden)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out != string(want) {
+				t.Errorf("report differs from %s:\n%s", golden, out)
+			}
+		})
+	}
+}
+
+func TestParseDiffContextLines(t *testing.T) {
+	// git diff with context lines (-U1 here): a context line counts on both
+	// sides of the hunk, and only the added lines are recorded.
+	diff := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n" +
+		"@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n" +
+		"@@ -9,2 +9,3 @@\n e\n+f\n g\n"
+	changes, err := parseDiff(strings.NewReader(diff))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := changes["x.go"], []lineRange{{2, 2}, {10, 10}}; !slices.Equal(got, want) {
+		t.Errorf("x.go: %v, want %v", got, want)
+	}
+}
+
+func TestParseDiffErrorMessages(t *testing.T) {
+	for diff, want := range map[string]string{
+		"diff --git a/x b/x\n+++ b/x\n@@ -1 +1,2 @@\n+a\ndiff --git a/y b/y\n": `line 5: hunk ends early at "diff --git a/y b/y"`,
+		"+++ b/x\n@@ -1 @@\n":          `line 2: malformed hunk header "@@ -1 @@"`,
+		"+++ x\n":                      `line 1: new path "x" does not start with b/`,
+		"+++ b/x\n@@ -1,2 +1 @@\n-a\n": "the diff ends inside a hunk",
+	} {
+		if _, err := parseDiff(strings.NewReader(diff)); err == nil || err.Error() != want {
+			t.Errorf("parseDiff(%q) error = %v, want %q", diff, err, want)
+		}
+	}
+	readErr := errors.New("read failed")
+	if _, err := parseDiff(iotest.ErrReader(readErr)); !errors.Is(err, readErr) {
+		t.Errorf("parseDiff on a failing reader: error = %v, want %v", err, readErr)
+	}
+}
+
+func TestEvaluateDiffBlocks(t *testing.T) {
+	files := map[string]*fileCoverage{
+		"m/x.go": {Name: "m/x.go", Total: 6, Covered: 2, counts: []blockCount{
+			{startLine: 20, endLine: 22, stmts: 2},
+			{startLine: 1, endLine: 3, stmts: 2, covered: true},
+			{startLine: 10, endLine: 12, stmts: 2},
+		}},
+		"m/y.go": {Name: "m/y.go", Total: 1, Covered: 1, counts: []blockCount{{startLine: 1, endLine: 1, stmts: 1, covered: true}}},
+	}
+	in := gateInput{
+		config:   config{DiffMin: 75, TotalTarget: 80},
+		baseline: 50,
+		changes: map[string][]lineRange{
+			"x.go":      {{1, 25}},
+			"y.go":      {{5, 6}}, // touches no block
+			"z.go":      {{1, 1}}, // not in the profile
+			"x_test.go": {{1, 1}},
+			"notes.md":  {{1, 1}},
+		},
+	}
+	r := evaluate(in, files, "m/")
+	want := []changedFile{{name: "x.go", changed: 6, covered: 2, uncovered: []lineRange{{10, 12}, {20, 22}}}}
+	if !reflect.DeepEqual(r.diffFiles, want) || r.diffChanged != 6 || r.diffCovered != 2 || r.diffIgnored != 1 || !r.diffChecked {
+		t.Errorf("diff rule: files %+v, %d of %d covered, %d ignored, checked %v", r.diffFiles, r.diffCovered, r.diffChanged, r.diffIgnored, r.diffChecked)
+	}
+	if r.total != 7 || r.totalCovered != 3 {
+		t.Errorf("total %d of %d, want 3 of 7", r.totalCovered, r.total)
 	}
 }

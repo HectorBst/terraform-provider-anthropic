@@ -4,9 +4,11 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 const profile = `mode: atomic
@@ -86,5 +88,34 @@ func TestWriteSummary(t *testing.T) {
 	}
 	if strings.Contains(got, "helpers.go") {
 		t.Errorf("summary lists a file -match excludes:\n%s", got)
+	}
+}
+
+func TestParseProfileSkipsBlankLines(t *testing.T) {
+	files, err := parseProfile(strings.NewReader("mode: set\n\nexample.com/m/a.go:1.1,2.2 2 1\n  \nexample.com/m/a.go:3.1,4.2 1 0\n\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := files["example.com/m/a.go"]; got == nil || got.Total != 3 || got.Covered != 2 {
+		t.Errorf("a.go: %+v, want 2 of 3 statements covered", got)
+	}
+}
+
+func TestParseProfileErrorMessages(t *testing.T) {
+	for input, want := range map[string]string{
+		"":                                 "empty coverage profile",
+		"example.com/m/a.go:1.1,2.2 1 1\n": "not a coverage profile: missing mode line",
+		"mode: set\nexample.com/m/a.go:1.1,2.2 1\n":     `line 2: malformed block "example.com/m/a.go:1.1,2.2 1"`,
+		"mode: set\nexample.com/m/a.go:1.1,2.2 x 1\n":   `line 2: statement count: strconv.Atoi: parsing "x": invalid syntax`,
+		"mode: set\nexample.com/m/a.go:1.1,2.2 1 x\n":   `line 2: execution count: strconv.ParseInt: parsing "x": invalid syntax`,
+		"mode: set\n\nexample.com/m/a.go:5.1,2.2 1 1\n": `line 3: block position "5.1,2.2" ends before it starts`,
+	} {
+		if _, err := parseProfile(strings.NewReader(input)); err == nil || err.Error() != want {
+			t.Errorf("parseProfile(%q) error = %v, want %q", input, err, want)
+		}
+	}
+	readErr := errors.New("read failed")
+	if _, err := parseProfile(iotest.ErrReader(readErr)); !errors.Is(err, readErr) {
+		t.Errorf("parseProfile on a failing reader: error = %v, want %v", err, readErr)
 	}
 }
