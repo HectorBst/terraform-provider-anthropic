@@ -10,6 +10,7 @@ import (
 	"github.com/ippontech/terraform-provider-anthropic/internal/platform"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/agents"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/apikeys"
+	"github.com/ippontech/terraform-provider-anthropic/internal/services/claudetag"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/compliance"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/deployments"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/environments"
@@ -109,6 +110,9 @@ func resourceRegistrations() []registration[resource.Resource] {
 	return []registration[resource.Resource]{
 		{New: agents.NewAgentResource, AWS: supported, GoogleCloud: supported},
 		{New: apikeys.NewAPIKeyResource, AWS: awsAPIKeys, GoogleCloud: gcAdminRoutes},
+		{New: claudetag.NewBundleTargetResource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
+		{New: claudetag.NewSlackChannelResource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
+		{New: claudetag.NewSlackWorkspaceSettingsResource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
 		{New: compliance.NewComplianceSettingsResource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
 		{New: deployments.NewDeploymentResource, AWS: awsDeployments, GoogleCloud: supported},
 		{New: environments.NewEnvironmentResource, AWS: supported, GoogleCloud: supported},
@@ -152,6 +156,10 @@ func dataSourceRegistrations() []registration[datasource.DataSource] {
 		{New: agents.NewAgentsDataSource, AWS: supported, GoogleCloud: supported},
 		{New: apikeys.NewAPIKeyDataSource, AWS: awsAPIKeys, GoogleCloud: gcAdminRoutes},
 		{New: apikeys.NewAPIKeysDataSource, AWS: awsAPIKeys, GoogleCloud: gcAdminRoutes},
+		{New: claudetag.NewBundleDataSource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
+		{New: claudetag.NewBundlesDataSource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
+		{New: claudetag.NewSlackChannelDataSource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
+		{New: claudetag.NewSlackWorkspacesDataSource, AWS: awsNotReviewed, GoogleCloud: gcNotReviewed},
 		{New: deployments.NewDeploymentRunsDataSource, AWS: awsDeployments, GoogleCloud: supported},
 		{New: environments.NewEnvironmentDataSource, AWS: supported, GoogleCloud: supported},
 		{New: environments.NewEnvironmentsDataSource, AWS: supported, GoogleCloud: supported},

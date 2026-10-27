@@ -220,6 +220,12 @@ Every resource and data source works on the Claude API. On a cloud platform, a t
 |---|---|---|---|
 | `anthropic_api_key` | resource, data source | Unavailable | Unavailable |
 | `anthropic_api_keys` | data source | Unavailable | Unavailable |
+| `anthropic_claude_tag_bundle` | data source | Unverified | Unverified |
+| `anthropic_claude_tag_bundle_target` | resource | Unverified | Unverified |
+| `anthropic_claude_tag_bundles` | data source | Unverified | Unverified |
+| `anthropic_claude_tag_slack_channel` | resource, data source | Unverified | Unverified |
+| `anthropic_claude_tag_slack_workspace_settings` | resource | Unverified | Unverified |
+| `anthropic_claude_tag_slack_workspaces` | data source | Unverified | Unverified |
 | `anthropic_compliance_settings` | resource | Unverified | Unverified |
 | `anthropic_deployment` | resource | Unverified | Supported |
 | `anthropic_deployment_runs` | data source | Unverified | Supported |
