@@ -32,6 +32,7 @@ Each directory below has a `CLAUDE.md` with the load-bearing details of its reso
 
 - `agents/`: `agent`; `agent`, `agents`. Standard key.
 - `apikeys/`: `api_key` (import-only); `api_key`, `api_keys`. Admin key.
+- `claudetag/`: `claude_tag_slack_channel`, `claude_tag_slack_workspace_settings`, `claude_tag_bundle_target`; `claude_tag_bundle(s)`, `claude_tag_slack_channel`, `claude_tag_slack_workspaces`. Claude Enterprise scoped Admin key (`read:claude_tag`, `write:claude_tag`), beta Claude Tag API through `internal/admin`.
 - `compliance/`: anthropic_compliance_settings singleton resource (admin API, raw `admin.Client`).
 - `compliance/`: see its `CLAUDE.md`.
 - `deployments/`: `deployment`; `deployment_runs`. Standard key.
