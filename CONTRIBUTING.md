@@ -88,9 +88,9 @@ A `.env` file at the project root (gitignored) can hold these keys and other mac
 make lint
 ```
 
-`.golangci.yml` lints the whole tree, existing code and new alike, and `make lint` reports 0 issues on `main`: a finding fails your pull request wherever it is. Fix it rather than silence it. When the code is right as it is (a gosec finding by design, a signature an interface imposes), add `//nolint:<linter> // <reason>` on that line, naming one linter and giving the reason; file-wide and configuration-wide exclusions are not accepted.
+`.golangci.yml` lints the whole tree, existing code and new alike, and `make lint` reports 0 issues on `main`: a finding fails your pull request wherever it is. `make lint` covers the `tools/` module too (a module of its own: it runs golangci-lint there with `--config ../.golangci.yml`), as the CI lint job does. Fix it rather than silence it. When the code is right as it is (a gosec finding by design, a signature an interface imposes), add `//nolint:<linter> // <reason>` on that line, naming one linter and giving the reason; file-wide and configuration-wide exclusions are not accepted.
 
-The pre-commit configuration runs `golangci-lint fmt` (gofmt, plus imports grouped with this module's packages last) on the Go files that differ from `origin/main`: the staged ones on commit, and with `pre-commit run -a` the files your branch changed, never the others. It also runs `golangci-lint run` and `go mod tidy -diff`, at the versions pinned in `mise.toml`.
+The pre-commit configuration runs `golangci-lint fmt` (gofmt, plus imports grouped with this module's packages last) on the Go files that differ from `origin/main`: the staged ones on commit, and with `pre-commit run -a` the files your branch changed, never the others. It also runs `make lint` and `go mod tidy -diff`, at the versions pinned in `mise.toml`.
 
 ### Complexity
 
@@ -98,7 +98,7 @@ The pre-commit configuration runs `golangci-lint fmt` (gofmt, plus imports group
 make complexity
 ```
 
-The cognitive complexity of a function is capped at 20, in the non-test Go files under `internal/` (tests and the test-helper packages are left out: table-driven tests read better long). The `complexity` job compares every function with the merge base of your branch and `origin/main` (`make complexity COMPLEXITY_BASE=upstream/main` when `origin` is your fork):
+The cognitive complexity of a function is capped at 20, in the non-test Go files under `internal/` and `tools/` (tests, `testdata` fixtures and the test-helper packages are left out: table-driven tests read better long). The `complexity` job compares every function with the merge base of your branch and `origin/main` (`make complexity COMPLEXITY_BASE=upstream/main` when `origin` is your fork):
 
 - a new function, or one that scored 20 or less there, must score 20 or less;
 - a function that already scored more there may change, as long as its score does not rise. When you have to change one, put the new logic in a helper.

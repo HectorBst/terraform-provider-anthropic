@@ -3,7 +3,10 @@
 #
 # The whole tree is linted, existing code and new code alike, as the complexity
 # cap and the coverage gate check it: `golangci-lint run` reports 0 issues, and
-# a finding fails a pull request wherever it is. When code is right as it is (a
+# a finding fails a pull request wherever it is. The tools module (tools/, a Go
+# module of its own, which a run from the root does not see) is linted with this
+# same file: `make lint` and the CI lint job also run golangci-lint in tools/
+# with `--config ../.golangci.yml`. When code is right as it is (a
 # gosec finding by design, a signature an interface imposes), silence the one
 # finding on its line with `//nolint:<linter> // <reason>`; add no file-wide or
 # configuration-wide exclusion.
@@ -35,12 +38,12 @@ linters:
     gocognit:
       # Cognitive complexity of at most 20 for production code. Tests and the
       # test-helper packages are left out (exclusions below): table-driven tests
-      # read better long. The whole tree is linted, so this reports every
-      # production function above 20, wherever it is and whichever lines a
-      # change edits. The complexity ratchet (`make complexity`, CI job
-      # `complexity`) stays as the check that compares every function with the
-      # merge base; since the refactoring lot no function on main scores above
-      # 20, so it is an absolute cap of 20 too.
+      # read better long. The whole tree is linted, the tools module included,
+      # so this reports every production function above 20, wherever it is and
+      # whichever lines a change edits. The complexity ratchet (`make
+      # complexity`, CI job `complexity`, over internal/ and tools/) stays as
+      # the check that compares every function with the merge base; no function
+      # on main scores above 20, so it is an absolute cap of 20 too.
       min-complexity: 20
     exhaustive:
       default-signifies-exhaustive: true

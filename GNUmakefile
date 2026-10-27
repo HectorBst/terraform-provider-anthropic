@@ -6,13 +6,17 @@ build:
 install: build
 	go install -v ./...
 
+# tools/ is a Go module of its own, which a run from the root does not see:
+# it is linted second, with the same configuration.
 lint:
 	golangci-lint run
+	cd tools && golangci-lint run --config ../.golangci.yml
 
 # The complexity ratchet of the CI complexity job (tools/complexity): every
-# function in the non-test Go files under internal/ scores 20 or less, unless
-# it already scored more at the merge base with COMPLEXITY_BASE and its score
-# did not rise. Reads the working tree, committed or not.
+# function in the non-test Go files under internal/ and tools/ (testdata
+# aside) scores 20 or less, unless it already scored more at the merge base
+# with COMPLEXITY_BASE and its score did not rise. Reads the working tree,
+# committed or not.
 COMPLEXITY_BASE ?= origin/main
 complexity:
 	@go run -C tools ./complexity -base $(COMPLEXITY_BASE)

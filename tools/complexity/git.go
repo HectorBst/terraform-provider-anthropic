@@ -51,7 +51,7 @@ func findMergeBase(root, base string) (string, error) {
 // commitTree reads the files of a commit that the scope includes, with one
 // git cat-file process for all of them.
 func commitTree(root, commit string, sc scope) (tree, error) {
-	out, err := git(root, "ls-tree", "-r", "-z", "--full-tree", commit, "--", sc.dir)
+	out, err := git(root, append([]string{"ls-tree", "-r", "-z", "--full-tree", commit, "--"}, sc.dirs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,8 +128,18 @@ func dirTree(root string, sc scope) (tree, error) {
 	defer func() { _ = r.Close() }()
 	fsys := r.FS()
 	t := tree{}
-	start := strings.TrimSuffix(sc.dir, "/")
-	err = fs.WalkDir(fsys, start, func(name string, d fs.DirEntry, err error) error {
+	for _, dir := range sc.dirs {
+		if err := readDir(fsys, strings.TrimSuffix(dir, "/"), sc, t); err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
+}
+
+// readDir adds to t the files under the directory start that the scope
+// includes.
+func readDir(fsys fs.FS, start string, sc scope, t tree) error {
+	return fs.WalkDir(fsys, start, func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -149,5 +159,4 @@ func dirTree(root string, sc scope) (tree, error) {
 		t[name] = content
 		return nil
 	})
-	return t, err
 }

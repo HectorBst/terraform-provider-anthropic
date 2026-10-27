@@ -84,11 +84,12 @@ repos:
           files=(); for f in "$@"; do grep -qxF -- "$f" <<<"$changed" && files+=("$f"); done;
           [ ${#files[@]} -eq 0 ] || exec mise exec -- golangci-lint fmt "${files[@]}"' --
         types: [go]
-      # Lints the whole tree, as the CI lint job does.
+      # Lints the whole tree, the tools module included, as the CI lint job
+      # does (make lint).
       - id: golangci-lint
         name: golangci-lint run
         language: system
-        entry: mise exec -- golangci-lint run
+        entry: mise exec -- make lint
         types: [go]
         pass_filenames: false
         require_serial: true

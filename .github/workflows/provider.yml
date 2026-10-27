@@ -54,11 +54,22 @@ jobs:
           # renovate: datasource=github-releases depName=golangci/golangci-lint
           version: v2.15.0
 
+      # tools/ is a Go module of its own, which the run above does not see:
+      # the same version, with the same configuration.
+      - name: Run golangci-lint on the tools module
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # renovate: datasource=github-releases depName=golangci/golangci-lint
+          version: v2.15.0
+          working-directory: tools
+          args: --config=../.golangci.yml
+
   # The complexity ratchet (tools/complexity, `make complexity`): every function
-  # in the non-test Go files under internal/ scores 20 or less in cognitive
-  # complexity, unless it already scored more at the merge base and its score
-  # did not rise. Nothing is committed: once no function on main scores above
-  # 20, the cap is absolute. A required check: it fails, it does not warn.
+  # in the non-test Go files under internal/ and tools/ scores 20 or less in
+  # cognitive complexity, unless it already scored more at the merge base and
+  # its score did not rise. Nothing is committed: once no function on main
+  # scores above 20, the cap is absolute. A required check: it fails, it does
+  # not warn.
   complexity:
     runs-on: ubuntu-latest
     timeout-minutes: 10

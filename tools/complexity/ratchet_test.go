@@ -19,7 +19,7 @@ import (
 const fixtureLimit = 3
 
 func fixtureScope() scope {
-	return scope{dir: "internal/", exclude: regexp.MustCompile(defaultExclude)}
+	return scope{dirs: []string{"internal/"}, exclude: regexp.MustCompile(defaultExclude)}
 }
 
 func loadFixture(t *testing.T, name string) map[string]function {
@@ -252,7 +252,7 @@ func TestEvaluateUnchangedTreePasses(t *testing.T) {
 func reportOf(t *testing.T, r result) string {
 	t.Helper()
 	var out strings.Builder
-	rep := report{mergeBase: "0123456789ab", dir: "internal/", exclude: defaultExclude, gocognit: "v1.3.0"}
+	rep := report{mergeBase: "0123456789ab", dirs: []string{"internal/"}, exclude: defaultExclude, gocognit: "v1.3.0"}
 	if err := writeReport(&out, r, rep); err != nil {
 		t.Fatal(err)
 	}
@@ -325,5 +325,60 @@ func TestReport(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestScopeIncludesSeveralDirs(t *testing.T) {
+	sc := scope{dirs: []string{"internal/", "tools/"}, exclude: regexp.MustCompile(defaultExclude)}
+	for name, want := range map[string]bool{
+		"internal/a/a.go":                                true,
+		"tools/complexity/main.go":                       true,
+		"tools/coversummary/gate.go":                     true,
+		"tools/complexity/main_test.go":                  false,
+		"tools/complexity/testdata/head/internal/a/a.go": false,
+		"tools/complexity/testdata/head/cmd/main.go":     false,
+		"internal/sdktest/server.go":                     false,
+		"main.go":                                        false,
+		"toolsextra/x.go":                                false,
+	} {
+		if got := sc.includes(name); got != want {
+			t.Errorf("includes(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestDirTreeSeveralDirs(t *testing.T) {
+	sc := scope{dirs: []string{"internal/", "cmd/"}, exclude: regexp.MustCompile(defaultExclude)}
+	tr, err := dirTree(filepath.Join("testdata", "head"), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns, err := scoreTree(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fns["cmd.OutsideInternal"].score; got != 6 {
+		t.Errorf("cmd.OutsideInternal scores %d, want 6 (functions: %d)", got, len(fns))
+	}
+	if _, ok := fns["internal/a.New"]; !ok {
+		t.Error("internal/a.New is missing")
+	}
+	if _, err := dirTree(filepath.Join("testdata", "head"), scope{dirs: []string{"absent/"}}); err == nil {
+		t.Error("a directory that does not exist is not an error")
+	}
+}
+
+func TestCodeList(t *testing.T) {
+	for _, tc := range []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"internal/"}, "`internal/`"},
+		{[]string{"internal/", "tools/"}, "`internal/` and `tools/`"},
+		{[]string{"a/", "b/", "c/"}, "`a/`, `b/` and `c/`"},
+	} {
+		if got := codeList(tc.in); got != tc.want {
+			t.Errorf("codeList(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

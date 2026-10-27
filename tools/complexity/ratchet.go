@@ -141,7 +141,7 @@ func classify(h, b function, inBase bool, limit int) (state, bool) {
 // report holds what the Markdown report shows besides the result.
 type report struct {
 	mergeBase string // abbreviated commit
-	dir       string
+	dirs      []string
 	exclude   string
 	gocognit  string // module version, "" when unknown
 }
@@ -182,10 +182,22 @@ func writeReport(w io.Writer, r result, rep report) error {
 	if rep.gocognit != "" {
 		version += " " + rep.gocognit
 	}
-	fmt.Fprintf(&b, "Scope: %d functions in the non-test Go files under `%s`, outside `%s` and generated files. Scores from %s, file by file as golangci-lint computes them; `//gocognit:ignore` and `//nolint` exempt nothing here.\n",
-		r.checked, rep.dir, rep.exclude, version)
+	fmt.Fprintf(&b, "Scope: %d functions in the non-test Go files under %s, outside `%s` and generated files. Scores from %s, file by file as golangci-lint computes them; `//gocognit:ignore` and `//nolint` exempt nothing here.\n",
+		r.checked, codeList(rep.dirs), rep.exclude, version)
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// codeList returns "`a`", "`a` and `b`" or "`a`, `b` and `c`".
+func codeList(items []string) string {
+	quoted := make([]string, len(items))
+	for i, s := range items {
+		quoted[i] = "`" + s + "`"
+	}
+	if len(quoted) < 2 {
+		return strings.Join(quoted, "")
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
 }
 
 func writeTable(b *strings.Builder, title string, entries []entry, keep func(entry) bool, limit int) {

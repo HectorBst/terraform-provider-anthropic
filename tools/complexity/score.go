@@ -20,8 +20,9 @@ import (
 
 // scope selects the files the ratchet checks.
 type scope struct {
-	// dir is the module-relative directory checked, with a trailing slash.
-	dir string
+	// dirs are the repository-relative directories checked, each with a
+	// trailing slash.
+	dirs []string
 	// exclude matches the module-relative paths left out (the test-helper
 	// packages).
 	exclude *regexp.Regexp
@@ -31,7 +32,7 @@ type scope struct {
 // non-test Go file the ratchet checks. Like the go command, it skips testdata
 // directories and those whose name starts with "." or "_".
 func (s scope) includes(name string) bool {
-	if !strings.HasPrefix(name, s.dir) || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+	if !s.under(name) || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 		return false
 	}
 	if s.exclude != nil && s.exclude.MatchString(name) {
@@ -43,6 +44,11 @@ func (s scope) includes(name string) bool {
 		}
 	}
 	return true
+}
+
+// under reports whether a path lies in one of the directories checked.
+func (s scope) under(name string) bool {
+	return slices.ContainsFunc(s.dirs, func(dir string) bool { return strings.HasPrefix(name, dir) })
 }
 
 // tree maps the module-relative, slash-separated paths of Go files to their

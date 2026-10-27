@@ -73,7 +73,7 @@ func copyTree(t *testing.T, from, to string) {
 }
 
 func fixtureOptions(dir, base string) options {
-	return options{base: base, root: dir, limit: fixtureLimit, dir: "internal/", exclude: regexp.MustCompile(defaultExclude)}
+	return options{base: base, root: dir, limit: fixtureLimit, dirs: []string{"internal/"}, exclude: regexp.MustCompile(defaultExclude)}
 }
 
 func TestRunAgainstGit(t *testing.T) {
@@ -128,6 +128,48 @@ func TestRunInputErrors(t *testing.T) {
 		err := run(&out, fixtureOptions(dir, base))
 		if err == nil || errors.Is(err, errRatchetFailed) {
 			t.Errorf("base %q: err = %v, want an input error", base, err)
+		}
+	}
+}
+
+func TestRunSeveralDirs(t *testing.T) {
+	dir := gitRepo(t)
+	opts := fixtureOptions(dir, "main")
+	opts.dirs = []string{"internal/", "cmd/"}
+	var out strings.Builder
+	if err := run(&out, opts); !errors.Is(err, errRatchetFailed) {
+		t.Fatalf("run against main: err = %v, want errRatchetFailed", err)
+	}
+	for _, w := range []string{
+		"| A new function scores 3 or less | 3 above | **FAIL** |",
+		"| `cmd.OutsideInternal` | `cmd/main.go:6` | 6 | - | **FAIL**: new function above 3 |",
+		"Scope: 15 functions in the non-test Go files under `internal/` and `cmd/`, outside",
+	} {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("report lacks %q:\n%s", w, out.String())
+		}
+	}
+	out.Reset()
+	opts.base = "HEAD"
+	if err := run(&out, opts); err != nil {
+		t.Fatalf("run against HEAD: %v\n%s", err, out.String())
+	}
+}
+
+func TestValidDirs(t *testing.T) {
+	for _, tc := range []struct {
+		dir  string
+		want bool
+	}{
+		{"internal/", true},
+		{"internal/,tools/", true},
+		{"internal", false},
+		{"internal/,tools", false},
+		{"internal/,", false},
+		{"/", false},
+	} {
+		if got := validDirs(strings.Split(tc.dir, ",")); got != tc.want {
+			t.Errorf("validDirs(%q) = %v, want %v", tc.dir, got, tc.want)
 		}
 	}
 }
