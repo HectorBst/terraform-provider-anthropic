@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -133,59 +133,90 @@ type lineRange struct{ from, to int }
 // blank or hold only a // comment: a coverage block spans the comment and
 // blank lines inside it, which are no executable statement.
 func parseDiff(r io.Reader) (map[string][]lineRange, error) {
-	changes := map[string][]lineRange{}
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	var file string
-	oldLeft, newLeft := 0, 0 // content lines still expected in the current hunk
-	newLine := 0             // line number, in the new file, of the next added or context line
+	p := diffParser{changes: map[string][]lineRange{}}
 	line := 0
 	for scanner.Scan() {
 		line++
 		text := scanner.Text()
-		if oldLeft > 0 || newLeft > 0 {
-			switch {
-			case strings.HasPrefix(text, "-"):
-				oldLeft--
-			case strings.HasPrefix(text, "+"):
-				newLeft--
-				addChangedLine(changes, file, text[1:], newLine)
-				newLine++
-			case strings.HasPrefix(text, " "):
-				oldLeft--
-				newLeft--
-				newLine++
-			case strings.HasPrefix(text, `\`): // "\ No newline at end of file"
-			default:
+		if p.hunk.open() {
+			if !p.consume(text) {
 				return nil, fmt.Errorf("line %d: hunk ends early at %q", line, text)
 			}
 			continue
 		}
-		switch {
-		case strings.HasPrefix(text, "diff --git "):
-			file = ""
-		case strings.HasPrefix(text, "+++ "):
-			name, err := diffPath(strings.TrimPrefix(text, "+++ "))
-			if err != nil {
-				return nil, fmt.Errorf("line %d: %w", line, err)
-			}
-			file = name
-		case strings.HasPrefix(text, "@@ "):
-			oldCount, newStart, newCount, err := hunkHeader(text)
-			if err != nil {
-				return nil, fmt.Errorf("line %d: %w", line, err)
-			}
-			oldLeft, newLeft, newLine = oldCount, newCount, newStart
+		if err := p.header(text); err != nil {
+			return nil, fmt.Errorf("line %d: %w", line, err)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	if oldLeft > 0 || newLeft > 0 {
+	if p.hunk.open() {
 		return nil, errors.New("the diff ends inside a hunk")
 	}
-	return changes, nil
+	return p.changes, nil
 }
+
+// diffParser is the state of parseDiff between two lines.
+type diffParser struct {
+	changes map[string][]lineRange
+	file    string     // the current file in the new tree, "" when none
+	hunk    hunkCounts // content lines the current hunk still expects
+	newLine int        // line number, in the new file, of the next added or context line
+}
+
+// header reads a line outside a hunk: the start of a file, its new path, or
+// a hunk header. Other lines (index, mode, the old path) say nothing the
+// rule needs.
+func (p *diffParser) header(text string) error {
+	switch {
+	case strings.HasPrefix(text, "diff --git "):
+		p.file = ""
+	case strings.HasPrefix(text, "+++ "):
+		name, err := diffPath(strings.TrimPrefix(text, "+++ "))
+		if err != nil {
+			return err
+		}
+		p.file = name
+	case strings.HasPrefix(text, "@@ "):
+		oldCount, newStart, newCount, err := hunkHeader(text)
+		if err != nil {
+			return err
+		}
+		p.hunk = hunkCounts{oldLines: oldCount, newLines: newCount}
+		p.newLine = newStart
+	}
+	return nil
+}
+
+// consume reads one content line of the current hunk and records an added
+// one (addChangedLine). It reports false for a line that cannot be one,
+// which means the hunk ended early.
+func (p *diffParser) consume(text string) bool {
+	switch {
+	case strings.HasPrefix(text, "-"):
+		p.hunk.oldLines--
+	case strings.HasPrefix(text, "+"):
+		p.hunk.newLines--
+		addChangedLine(p.changes, p.file, text[1:], p.newLine)
+		p.newLine++
+	case strings.HasPrefix(text, " "):
+		p.hunk.oldLines--
+		p.hunk.newLines--
+		p.newLine++
+	case strings.HasPrefix(text, `\`): // "\ No newline at end of file"
+	default:
+		return false
+	}
+	return true
+}
+
+// hunkCounts counts the content lines a hunk still expects on each side.
+type hunkCounts struct{ oldLines, newLines int }
+
+func (h hunkCounts) open() bool { return h.oldLines > 0 || h.newLines > 0 }
 
 // addChangedLine records line n of file, added with the given text, unless
 // the file is deleted ("") or the line is blank or holds only a // comment.
@@ -301,7 +332,7 @@ func (r gateResult) passed() bool {
 	return r.diffOK() && r.totalOK() && r.baselineOK() && r.packagesOK()
 }
 
-// evaluate applies the three rules.
+// evaluate applies the rules.
 func evaluate(in gateInput, files map[string]*fileCoverage, trim string) gateResult {
 	cfg := in.config
 	r := gateResult{in: in}
@@ -324,46 +355,55 @@ func evaluate(in gateInput, files map[string]*fileCoverage, trim string) gateRes
 		r.baselineUnderReachedTarget = *in.baseBaseline >= cfg.TotalTarget && in.baseline < cfg.TotalTarget
 	}
 
-	if in.changes == nil {
-		return r
+	if in.changes != nil {
+		r.evaluateDiff(files, trim)
 	}
+	return r
+}
+
+// evaluateDiff applies the diff rule to the changed Go files, tests and
+// exclusions aside, in path order.
+func (r *gateResult) evaluateDiff(files map[string]*fileCoverage, trim string) {
 	r.diffChecked = true
-	names := make([]string, 0, len(in.changes))
-	for name := range in.changes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(r.in.changes)) {
 		if !strings.HasSuffix(name, ".go") {
 			continue
 		}
-		if strings.HasSuffix(name, "_test.go") || cfg.excluded(name) {
+		if strings.HasSuffix(name, "_test.go") || r.in.config.excluded(name) {
 			r.diffIgnored++
 			continue
 		}
-		cf := changedFile{name: name}
-		if fc := files[trim+name]; fc != nil {
-			for _, b := range fc.counts {
-				if !touches(in.changes[name], b) {
-					continue
-				}
-				cf.changed += b.stmts
-				if b.covered {
-					cf.covered += b.stmts
-				} else {
-					cf.uncovered = append(cf.uncovered, lineRange{b.startLine, b.endLine})
-				}
-			}
-		}
+		cf := changedBlocks(name, files[trim+name], r.in.changes[name])
 		if cf.changed == 0 {
 			continue
 		}
-		slices.SortFunc(cf.uncovered, func(a, b lineRange) int { return a.from - b.from })
 		r.diffChanged += cf.changed
 		r.diffCovered += cf.covered
 		r.diffFiles = append(r.diffFiles, cf)
 	}
-	return r
+}
+
+// changedBlocks counts the statements of the blocks of fc that the changed
+// ranges touch, listing the uncovered ones by line. fc is nil for a file the
+// profile does not list, which has no statement.
+func changedBlocks(name string, fc *fileCoverage, ranges []lineRange) changedFile {
+	cf := changedFile{name: name}
+	if fc == nil {
+		return cf
+	}
+	for _, b := range fc.counts {
+		if !touches(ranges, b) {
+			continue
+		}
+		cf.changed += b.stmts
+		if b.covered {
+			cf.covered += b.stmts
+		} else {
+			cf.uncovered = append(cf.uncovered, lineRange{b.startLine, b.endLine})
+		}
+	}
+	slices.SortFunc(cf.uncovered, func(a, b lineRange) int { return a.from - b.from })
+	return cf
 }
 
 // touches reports whether one of the changed ranges overlaps the block.
@@ -391,6 +431,23 @@ func verdict(ok bool) string {
 func writeGate(w io.Writer, r gateResult) error {
 	cfg := r.in.config
 	var b strings.Builder
+	writeRules(&b, r)
+	writeAdvice(&b, r)
+	writeChangedFiles(&b, r)
+	writePackages(&b, r)
+
+	excluded := "nothing"
+	if len(cfg.Exclude) > 0 {
+		excluded = "`" + strings.Join(cfg.Exclude, "`, `") + "`"
+	}
+	fmt.Fprintf(&b, "Excluded from every rule: %s.\n\n", excluded)
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// writeRules prints the verdict and the table of the rules.
+func writeRules(b *strings.Builder, r gateResult) {
+	cfg := r.in.config
 	b.WriteString("## Coverage gate\n\n")
 	if r.passed() {
 		b.WriteString("All rules pass.\n\n")
@@ -401,11 +458,11 @@ func writeGate(w io.Writer, r gateResult) error {
 
 	switch {
 	case !r.diffChecked:
-		fmt.Fprintf(&b, "| Diff: covered share of the statements the change touches | not measured (no diff given) | at least %g%% | skipped |\n", cfg.DiffMin)
+		fmt.Fprintf(b, "| Diff: covered share of the statements the change touches | not measured (no diff given) | at least %g%% | skipped |\n", cfg.DiffMin)
 	case r.diffChanged == 0:
-		fmt.Fprintf(&b, "| Diff: covered share of the statements the change touches | no executable statement changed | at least %g%% | pass |\n", cfg.DiffMin)
+		fmt.Fprintf(b, "| Diff: covered share of the statements the change touches | no executable statement changed | at least %g%% | pass |\n", cfg.DiffMin)
 	default:
-		fmt.Fprintf(&b, "| Diff: covered share of the statements the change touches | %.1f%% (%d of %d) | at least %g%% | %s |\n",
+		fmt.Fprintf(b, "| Diff: covered share of the statements the change touches | %.1f%% (%d of %d) | at least %g%% | %s |\n",
 			r.diffPercent(), r.diffCovered, r.diffChanged, cfg.DiffMin, verdict(r.diffOK()))
 	}
 
@@ -413,63 +470,67 @@ func writeGate(w io.Writer, r gateResult) error {
 	if r.floorAtTarget {
 		required = fmt.Sprintf("at least %.2f%% (baseline %.2f minus %g, never under the %g%% floor)", r.floor, r.in.baseline, cfg.RatchetTolerance, cfg.TotalTarget)
 	}
-	fmt.Fprintf(&b, "| Ratchet: total outside the exclusions | %.2f%% (%d of %d) | %s | %s |\n",
+	fmt.Fprintf(b, "| Ratchet: total outside the exclusions | %.2f%% (%d of %d) | %s | %s |\n",
 		r.totalPercent(), r.totalCovered, r.total, required, verdict(r.totalOK()))
 
 	base := "base branch baseline unknown"
 	if r.in.baseBaseline != nil {
 		base = fmt.Sprintf("base branch: %.2f", *r.in.baseBaseline)
 	}
-	fmt.Fprintf(&b, "| Floor: the baseline never goes back under %g%% once reached | %.2f (%s) | not under %g once the base reached it | %s |\n",
+	fmt.Fprintf(b, "| Floor: the baseline never goes back under %g%% once reached | %.2f (%s) | not under %g once the base reached it | %s |\n",
 		cfg.TotalTarget, r.in.baseline, base, cfg.TotalTarget, verdict(r.baselineOK()))
-	writePackageRule(&b, r)
+	writePackageRule(b, r)
 	b.WriteString("\n")
+}
 
+// writeAdvice says what the author can do: how far the target is, a gain to
+// lock in, a lowered baseline, a total or a baseline to restore.
+func writeAdvice(b *strings.Builder, r gateResult) {
+	cfg := r.in.config
 	if !r.floorAtTarget {
-		fmt.Fprintf(&b, "The target is %g%%: the baseline is %.2f points away. Once the baseline reaches it, the total may never drop below %g%%.\n\n",
+		fmt.Fprintf(b, "The target is %g%%: the baseline is %.2f points away. Once the baseline reaches it, the total may never drop below %g%%.\n\n",
 			cfg.TotalTarget, cfg.TotalTarget-r.in.baseline, cfg.TotalTarget)
 	}
 	if measured := floor2(r.totalPercent()); r.totalOK() && measured > r.in.baseline {
-		fmt.Fprintf(&b, "This change raises the total to %.2f%% (%d of %d), above the baseline %.2f%%: set `%s` to `%.2f` (the total, truncated) in this pull request to lock the gain in.\n\n",
+		fmt.Fprintf(b, "This change raises the total to %.2f%% (%d of %d), above the baseline %.2f%%: set `%s` to `%.2f` (the total, truncated) in this pull request to lock the gain in.\n\n",
 			r.totalPercent(), r.totalCovered, r.total, r.in.baseline, cfg.BaselineFile, measured)
 	}
 	if r.baselineLowered && r.baselineOK() {
-		fmt.Fprintf(&b, "This change lowers the baseline from %.2f to %.2f: reviewers must agree.\n\n", *r.in.baseBaseline, r.in.baseline)
+		fmt.Fprintf(b, "This change lowers the baseline from %.2f to %.2f: reviewers must agree.\n\n", *r.in.baseBaseline, r.in.baseline)
 	}
 	if !r.totalOK() {
-		fmt.Fprintf(&b, "The total fell under the ratchet: add tests, or, when the drop is deliberate (removed code that was well tested), lower `%s` in this pull request and say why.\n\n", cfg.BaselineFile)
+		fmt.Fprintf(b, "The total fell under the ratchet: add tests, or, when the drop is deliberate (removed code that was well tested), lower `%s` in this pull request and say why.\n\n", cfg.BaselineFile)
 	}
 	if !r.baselineOK() {
-		fmt.Fprintf(&b, "`%s` was lowered under %g%% after the base branch reached it; restore it.\n\n", cfg.BaselineFile, cfg.TotalTarget)
+		fmt.Fprintf(b, "`%s` was lowered under %g%% after the base branch reached it; restore it.\n\n", cfg.BaselineFile, cfg.TotalTarget)
 	}
+}
 
-	if len(r.diffFiles) > 0 {
-		b.WriteString("### Statements the change touches\n\nA coverage block the diff touches counts with all its statements; blank lines and lines holding only a `//` comment do not touch it. Test files and the exclusions of `.coverage.json` are left out")
-		if r.diffIgnored > 0 {
-			fmt.Fprintf(&b, " (%d changed Go files)", r.diffIgnored)
+// writeChangedFiles lists the changed files of the diff rule, with the lines
+// of their uncovered blocks.
+func writeChangedFiles(b *strings.Builder, r gateResult) {
+	if len(r.diffFiles) == 0 {
+		return
+	}
+	b.WriteString("### Statements the change touches\n\nA coverage block the diff touches counts with all its statements; blank lines and lines holding only a `//` comment do not touch it. Test files and the exclusions of `.coverage.json` are left out")
+	if r.diffIgnored > 0 {
+		fmt.Fprintf(b, " (%d changed Go files)", r.diffIgnored)
+	}
+	b.WriteString(".\n\n| File | Changed statements | Covered | Not covered (lines) |\n|---|---:|---:|---|\n")
+	for _, f := range r.diffFiles {
+		lines := make([]string, 0, len(f.uncovered))
+		for _, rg := range f.uncovered {
+			lines = append(lines, rg.String())
 		}
-		b.WriteString(".\n\n| File | Changed statements | Covered | Not covered (lines) |\n|---|---:|---:|---|\n")
-		for _, f := range r.diffFiles {
-			var lines []string
-			for _, rg := range f.uncovered {
-				if rg.from == rg.to {
-					lines = append(lines, strconv.Itoa(rg.from))
-				} else {
-					lines = append(lines, fmt.Sprintf("%d-%d", rg.from, rg.to))
-				}
-			}
-			fmt.Fprintf(&b, "| `%s` | %d | %d | %s |\n", f.name, f.changed, f.covered, strings.Join(lines, ", "))
-		}
-		b.WriteString("\n")
+		fmt.Fprintf(b, "| `%s` | %d | %d | %s |\n", f.name, f.changed, f.covered, strings.Join(lines, ", "))
 	}
+	b.WriteString("\n")
+}
 
-	writePackages(&b, r)
-
-	excluded := "nothing"
-	if len(cfg.Exclude) > 0 {
-		excluded = "`" + strings.Join(cfg.Exclude, "`, `") + "`"
+// String returns "7" for a single line, "7-9" for a range.
+func (rg lineRange) String() string {
+	if rg.from == rg.to {
+		return strconv.Itoa(rg.from)
 	}
-	fmt.Fprintf(&b, "Excluded from every rule: %s.\n\n", excluded)
-	_, err := io.WriteString(w, b.String())
-	return err
+	return fmt.Sprintf("%d-%d", rg.from, rg.to)
 }

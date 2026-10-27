@@ -61,36 +61,16 @@ func parseProfile(r io.Reader) (map[string]*fileCoverage, error) {
 			}
 			continue
 		}
-		// name.go:line.column,line.column numberOfStatements count
-		colon := strings.LastIndexByte(text, ':')
-		fields := strings.Fields(text[colon+1:])
-		if colon < 1 || len(fields) != 3 {
-			return nil, fmt.Errorf("line %d: malformed block %q", line, text)
-		}
-		startLine, endLine, err := blockLines(fields[0])
+		name, pos, block, err := parseBlock(text)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %w", line, err)
 		}
-		stmts, err := strconv.Atoi(fields[1])
-		if err != nil {
-			return nil, fmt.Errorf("line %d: statement count: %w", line, err)
-		}
-		count, err := strconv.ParseInt(fields[2], 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: execution count: %w", line, err)
-		}
-		name := text[:colon]
 		fc := files[name]
 		if fc == nil {
 			fc = &fileCoverage{Name: name, blocks: map[string]int{}}
 			files[name] = fc
 		}
-		if i, seen := fc.blocks[fields[0]]; seen {
-			fc.counts[i].covered = fc.counts[i].covered || count > 0
-			continue
-		}
-		fc.blocks[fields[0]] = len(fc.counts)
-		fc.counts = append(fc.counts, blockCount{startLine: startLine, endLine: endLine, stmts: stmts, covered: count > 0})
+		fc.add(pos, block)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
@@ -99,14 +79,54 @@ func parseProfile(r io.Reader) (map[string]*fileCoverage, error) {
 		return nil, errors.New("empty coverage profile")
 	}
 	for _, fc := range files {
-		for _, b := range fc.counts {
-			fc.Total += b.stmts
-			if b.covered {
-				fc.Covered += b.stmts
-			}
-		}
+		fc.sum()
 	}
 	return files, nil
+}
+
+// parseBlock parses one block line of a profile,
+// "name.go:line.column,line.column numberOfStatements count", into the file
+// name, the block position and the block.
+func parseBlock(text string) (name, pos string, b blockCount, err error) {
+	colon := strings.LastIndexByte(text, ':')
+	fields := strings.Fields(text[colon+1:])
+	if colon < 1 || len(fields) != 3 {
+		return "", "", b, fmt.Errorf("malformed block %q", text)
+	}
+	pos = fields[0]
+	if b.startLine, b.endLine, err = blockLines(pos); err != nil {
+		return "", "", b, err
+	}
+	if b.stmts, err = strconv.Atoi(fields[1]); err != nil {
+		return "", "", b, fmt.Errorf("statement count: %w", err)
+	}
+	count, err := strconv.ParseInt(fields[2], 10, 64)
+	if err != nil {
+		return "", "", b, fmt.Errorf("execution count: %w", err)
+	}
+	b.covered = count > 0
+	return text[:colon], pos, b, nil
+}
+
+// add records a block of the file; a block seen before stays counted once,
+// covered if either occurrence is.
+func (c *fileCoverage) add(pos string, b blockCount) {
+	if i, seen := c.blocks[pos]; seen {
+		c.counts[i].covered = c.counts[i].covered || b.covered
+		return
+	}
+	c.blocks[pos] = len(c.counts)
+	c.counts = append(c.counts, b)
+}
+
+// sum sets Total and Covered from the blocks.
+func (c *fileCoverage) sum() {
+	for _, b := range c.counts {
+		c.Total += b.stmts
+		if b.covered {
+			c.Covered += b.stmts
+		}
+	}
 }
 
 // blockLines parses "startLine.startCol,endLine.endCol".
