@@ -5,6 +5,7 @@ package sdktest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -341,5 +342,88 @@ func TestWriteJSONRefusesNonJSON(t *testing.T) {
 	var apiErr *anthropic.Error
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusInternalServerError || !strings.Contains(apiErr.RawJSON(), "response is not JSON") {
 		t.Errorf("err = %v, want a 500 naming the encoding error", err)
+	}
+}
+
+func TestDecodeBody(t *testing.T) {
+	rec := newRecorderTB(t)
+	s := NewServer(rec)
+	s.Handle("POST /v1/things", func(w http.ResponseWriter, r *http.Request) {
+		body, ok := s.DecodeBody(w, r)
+		if !ok {
+			return
+		}
+		if _, isNumber := body["n"].(json.Number); !isNumber {
+			t.Errorf("n = %#v, want a json.Number", body["n"])
+		}
+		WriteJSON(w, http.StatusOK, body)
+	})
+	for body, want := range map[string]int{`{"n": 1.50}`: http.StatusOK, `[1]`: http.StatusBadRequest, ``: http.StatusBadRequest} {
+		resp, err := http.Post(s.URL+"/v1/things", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("body %q answered %d, want %d", body, resp.StatusCode, want)
+		}
+		if want == http.StatusOK {
+			expectNoFailure(t, rec)
+		} else {
+			expectFailure(t, rec, "body is not a JSON object")
+		}
+	}
+}
+
+func TestRequireBeta(t *testing.T) {
+	s := NewServer(t)
+	s.Handle("GET /v1/beta", RequireBeta("b2", func(w http.ResponseWriter, _ *http.Request) {
+		WriteJSON(w, http.StatusOK, map[string]any{})
+	}))
+	for header, want := range map[string]int{"": http.StatusNotFound, "b1": http.StatusNotFound, "b1, b2": http.StatusOK, "b2": http.StatusOK} {
+		req, _ := http.NewRequest(http.MethodGet, s.URL+"/v1/beta", nil)
+		if header != "" {
+			req.Header.Set("anthropic-beta", header)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("anthropic-beta %q answered %d, want %d", header, resp.StatusCode, want)
+		}
+	}
+}
+
+func TestAssertShape(t *testing.T) {
+	rec := newRecorderTB(t)
+	s := NewServer(rec)
+	s.Handle("GET /v1/a", func(w http.ResponseWriter, _ *http.Request) { WriteJSON(w, http.StatusOK, map[string]any{}) })
+	s.Handle("GET /v1/b", func(w http.ResponseWriter, _ *http.Request) { WriteJSON(w, http.StatusOK, map[string]any{}) })
+	ctx := context.Background()
+	beta := NewAPIKeyClient(t, s.Server, option.WithHeader("anthropic-beta", "b1"))
+	if err := beta.Get(ctx, "/v1/a?beta=true", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewAuthTokenClient(t, s.Server).Get(ctx, "/v1/b", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	s.AssertShape(Shape{Credential: APIKey, Beta: "b1", BetaQuery: true}, "GET /v1/a")
+	s.AssertShape(Shape{Credential: AuthToken}, "GET /v1/b", "GET /v1/never")
+	expectNoFailure(t, rec)
+
+	s.AssertShape(Shape{Credential: APIKey, Beta: "b1", BetaQuery: true}, "GET /v1/never")
+	expectFailure(t, rec, `none of the routes ["GET /v1/never"] was called`)
+	s.AssertShape(Shape{Credential: AuthToken, BetaQuery: true}, "GET /v1/b")
+	expectFailure(t, rec, `has query "", want beta=true`)
+	s.AssertShape(Shape{Credential: AuthToken}, "GET /v1/a")
+	if errs := rec.failures(); len(errs) != 2 { // the credential and the beta header
+		t.Errorf("reported %q, want two errors", errs)
+	}
+	s.AssertShape(Shape{Credential: APIKey, Beta: "b1"}) // every route: /v1/b is wrong
+	if errs := rec.failures(); len(errs) != 2 || !strings.Contains(errs[0], "/v1/b") {
+		t.Errorf("reported %q, want the two errors of GET /v1/b", errs)
 	}
 }

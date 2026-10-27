@@ -301,7 +301,7 @@ func (c *Collection) HandleList(route string, family Family, pageSize int, keep 
 			}
 			return keep == nil || keep(r, o)
 		})
-		c.s.paginate(w, r, family, pageSize, items, c.position)
+		c.s.paginate(w, r, family, pageSize, items, idOf, c.position)
 	})
 }
 
@@ -338,14 +338,7 @@ func (c *Collection) lookup(w http.ResponseWriter, r *http.Request, route string
 }
 
 func (c *Collection) decodeBody(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	body := map[string]any{}
-	dec := json.NewDecoder(r.Body)
-	dec.UseNumber()
-	if err := dec.Decode(&body); err != nil {
-		c.s.badRequest(w, "%s %s: body is not a JSON object: %v", r.Method, r.URL.Path, err)
-		return nil, false
-	}
-	return body, true
+	return c.s.DecodeBody(w, r)
 }
 
 var wildcardRE = regexp.MustCompile(`\{([^}.]+)(\.\.\.)?\}`)
@@ -362,6 +355,18 @@ func wildcards(route string) []string {
 func lastWildcardValue(r *http.Request, route string) string {
 	names := wildcards(route)
 	return r.PathValue(names[len(names)-1])
+}
+
+// DeepCopy returns a copy of a JSON object that shares nothing with it,
+// numbers as json.Number (as DecodeBody and Collection keep them), or nil for
+// nil. A fake hands copies out of its store, so a response encoded after its
+// lock is released does not race a later write. A value JSON cannot encode
+// panics.
+func DeepCopy(o map[string]any) map[string]any {
+	if o == nil {
+		return nil
+	}
+	return deepCopy(o)
 }
 
 // deepCopy copies a JSON object through encoding/json, keeping numbers as

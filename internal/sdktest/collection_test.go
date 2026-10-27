@@ -5,6 +5,7 @@ package sdktest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -225,4 +226,19 @@ func TestDeepCopyPanicsOnNonJSON(t *testing.T) {
 		}
 	}()
 	deepCopy(map[string]any{"c": make(chan int)})
+}
+
+func TestDeepCopy(t *testing.T) {
+	if DeepCopy(nil) != nil {
+		t.Error("DeepCopy(nil) is not nil")
+	}
+	in := map[string]any{"n": 1, "m": map[string]any{"k": []any{"v"}}}
+	out := DeepCopy(in)
+	out["m"].(map[string]any)["k"].([]any)[0] = "changed"
+	if in["m"].(map[string]any)["k"].([]any)[0] != "v" {
+		t.Error("the copy shares a slice with the original")
+	}
+	if out["n"] != json.Number("1") {
+		t.Errorf("n = %#v, want json.Number(\"1\")", out["n"])
+	}
 }

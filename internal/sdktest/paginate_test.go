@@ -194,3 +194,27 @@ func TestPaginateMalformedToken(t *testing.T) {
 	}
 	expectFailure(t, rec, `points at item "item_9", which the fake cannot place`)
 }
+
+// TestPaginateBy pages items without an id by another field, in both
+// families, and answers them unchanged.
+func TestPaginateBy(t *testing.T) {
+	members := []map[string]any{{"user_id": "u1"}, {"user_id": "u2"}, {"user_id": "u3"}}
+	byUser := func(m map[string]any) string { return m["user_id"].(string) }
+	s := NewServer(t)
+	s.Handle("GET /v1/after", func(w http.ResponseWriter, r *http.Request) { s.PaginateBy(w, r, AfterID, 2, members, byUser) })
+	s.Handle("GET /v1/page", func(w http.ResponseWriter, r *http.Request) { s.PaginateBy(w, r, PageToken, 2, members, byUser) })
+	// In order: a page cursor is valid once the page before handed it out.
+	for _, tc := range []struct{ path, want string }{
+		{"/v1/after", `{"data":[{"user_id":"u1"},{"user_id":"u2"}],"first_id":"u1","has_more":true,"last_id":"u2"}`},
+		{"/v1/after?after_id=u2", `{"data":[{"user_id":"u3"}],"first_id":"u3","has_more":false,"last_id":"u3"}`},
+		{"/v1/page", `{"data":[{"user_id":"u1"},{"user_id":"u2"}],"next_page":"` + NextPageToken("u2") + `"}`},
+		{"/v1/page?page=" + NextPageToken("u2"), `{"data":[{"user_id":"u3"}],"next_page":null}`},
+	} {
+		_, body := get(t, s, tc.path)
+		if diff := JSONDiff(body, tc.want); diff != "" {
+			t.Errorf("%s:\n%s", tc.path, diff)
+		}
+	}
+	s.AssertAllPagesRead("GET /v1/after")
+	s.AssertAllPagesRead("GET /v1/page")
+}

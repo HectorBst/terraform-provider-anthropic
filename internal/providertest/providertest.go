@@ -31,6 +31,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
 	"github.com/ippontech/terraform-provider-anthropic/internal/provider"
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
@@ -72,4 +74,15 @@ func ProviderConfig(creds ...sdktest.Credential) string {
 	}
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// ExpectAction returns the plan checks of an apply step that must plan action
+// on the resource at addr (create, update in place, replace, as the schema
+// promises) and plan nothing after the apply and the refresh that follows it,
+// which is where a perpetual diff or an inconsistent result shows.
+func ExpectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
+	return resource.ConfigPlanChecks{
+		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
+		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+	}
 }

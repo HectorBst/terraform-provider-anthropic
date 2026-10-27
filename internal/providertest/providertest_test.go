@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
@@ -56,4 +57,13 @@ func TestProviderFactoriesReachTheFake(t *testing.T) {
 		}},
 	})
 	srv.AssertCredential("GET /v1/models/{id}", sdktest.APIKey)
+}
+
+// TestExpectAction: one check before the apply and one after the refresh
+// that follows it, nothing else.
+func TestExpectAction(t *testing.T) {
+	got := ExpectAction("anthropic_thing.test", plancheck.ResourceActionCreate)
+	if len(got.PreApply) != 1 || len(got.PostApplyPostRefresh) != 1 || len(got.PostApplyPreRefresh) != 0 {
+		t.Errorf("ExpectAction = %+v, want one PreApply and one PostApplyPostRefresh check", got)
+	}
 }

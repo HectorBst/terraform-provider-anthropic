@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -79,6 +80,34 @@ func (r Request) Betas() []string {
 // DecodeJSON unmarshals the request body into v.
 func (r Request) DecodeJSON(v any) error {
 	return json.Unmarshal(r.Body, v)
+}
+
+// DecodeBody reads the JSON object a handler's request carries, numbers kept
+// as json.Number. A body that is not a JSON object is a bug of the client: it
+// fails the test and answers 400 invalid_request_error.
+func (s *Server) DecodeBody(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
+	body := map[string]any{}
+	dec := json.NewDecoder(r.Body)
+	dec.UseNumber()
+	if err := dec.Decode(&body); err != nil {
+		s.badRequest(w, "%s %s: body is not a JSON object: %v", r.Method, r.URL.Path, err)
+		return nil, false
+	}
+	return body, true
+}
+
+// RequireBeta wraps h so that a request whose anthropic-beta lacks beta gets
+// a 404 not_found_error, as a beta endpoint answers it: "A request without it
+// returns 404, exactly as if the endpoint did not exist" (e.g.
+// https://platform.claude.com/docs/en/api/beta/organization/plugins/create).
+func RequireBeta(beta string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !slices.Contains(Request{Header: r.Header}.Betas(), beta) {
+			WriteAPIError(w, http.StatusNotFound, "", "Not found")
+			return
+		}
+		h(w, r)
+	}
 }
 
 // Part is one part of a multipart/form-data body.
@@ -320,6 +349,49 @@ func (s *Server) AssertCredential(route string, c Credential) {
 	for i, r := range s.requests0(route) {
 		if err := c.check(r.Header); err != nil {
 			s.t.Errorf("sdktest: request %d to %s %v", i+1, route, err)
+		}
+	}
+}
+
+// Shape is what every request to the endpoints of a service carries.
+type Shape struct {
+	// Credential is the one credential every request carries (see
+	// AssertCredential).
+	Credential Credential
+	// Beta is the anthropic-beta value every request carries; "" means no
+	// anthropic-beta header at all, as a GA or Admin endpoint expects.
+	Beta string
+	// BetaQuery requires the beta=true query flag the SDK adds to the
+	// requests of a beta endpoint.
+	BetaQuery bool
+}
+
+// AssertShape fails the test unless at least one request matched one of
+// routes (any route when none is given) and every request that did carries
+// shape, faulted ones included.
+func (s *Server) AssertShape(shape Shape, routes ...string) {
+	s.t.Helper()
+	called := map[string]bool{}
+	for _, r := range s.Requests("") {
+		if r.Route != "" && (len(routes) == 0 || slices.Contains(routes, r.Route)) {
+			called[r.Route] = true
+		}
+	}
+	if len(called) == 0 {
+		s.t.Errorf("sdktest: none of the routes %q was called\n%s", routes, s.describe())
+		return
+	}
+	for _, route := range slices.Sorted(maps.Keys(called)) {
+		s.AssertCredential(route, shape.Credential)
+		if shape.Beta == "" {
+			s.AssertNoBeta(route)
+		} else {
+			s.AssertBeta(route, shape.Beta)
+		}
+		for i, r := range s.Requests(route) {
+			if shape.BetaQuery && r.Query.Get("beta") != "true" {
+				s.t.Errorf("sdktest: request %d to %s has query %q, want beta=true", i+1, route, r.Query.Encode())
+			}
 		}
 	}
 }

@@ -70,20 +70,30 @@ type cursorLog struct {
 //
 // before_id is not supported: no data source pages backwards.
 func (s *Server) Paginate(w http.ResponseWriter, r *http.Request, family Family, pageSize int, items []map[string]any) {
+	s.PaginateBy(w, r, family, pageSize, items, idOf)
+}
+
+// PaginateBy is Paginate for items that carry no "id": key returns what
+// identifies an item instead (a membership's user_id, a setting's target),
+// which first_id, last_id and the cursors name. Items are answered as they
+// are, without an id added. key must be unique within items.
+func (s *Server) PaginateBy(w http.ResponseWriter, r *http.Request, family Family, pageSize int, items []map[string]any, key func(item map[string]any) string) {
 	index := map[string]int{}
 	for i, it := range items {
-		index[idOf(it)] = i
+		index[key(it)] = i
 	}
-	s.paginate(w, r, family, pageSize, items, func(id string) (int, bool) {
-		i, ok := index[id]
+	s.paginate(w, r, family, pageSize, items, key, func(k string) (int, bool) {
+		i, ok := index[k]
 		return i, ok
 	})
 }
 
-// paginate is Paginate with the position of an item given by pos, which may
-// still know an item deleted since its cursor was handed out (Collection).
-// items must be sorted by pos.
-func (s *Server) paginate(w http.ResponseWriter, r *http.Request, family Family, pageSize int, items []map[string]any, pos func(id string) (int, bool)) {
+// paginate is PaginateBy with the position of an item given by pos, which
+// may still know an item deleted since its cursor was handed out
+// (Collection). items must be sorted by pos.
+func (s *Server) paginate(w http.ResponseWriter, r *http.Request, family Family, pageSize int, items []map[string]any,
+	key func(map[string]any) string, pos func(k string) (int, bool),
+) {
 	route := r.Pattern
 	q := r.URL.Query()
 	var cursor string
@@ -138,7 +148,7 @@ func (s *Server) paginate(w http.ResponseWriter, r *http.Request, family Family,
 			return
 		}
 		for start < len(items) {
-			if ip, _ := pos(idOf(items[start])); ip > p {
+			if ip, _ := pos(key(items[start])); ip > p {
 				break
 			}
 			start++
@@ -155,10 +165,10 @@ func (s *Server) paginate(w http.ResponseWriter, r *http.Request, family Family,
 	case AfterID:
 		var firstID, lastID any
 		if len(page) > 0 {
-			firstID, lastID = idOf(page[0]), idOf(page[len(page)-1])
+			firstID, lastID = key(page[0]), key(page[len(page)-1])
 		}
 		if more {
-			s.issueCursor(route, idOf(page[len(page)-1]))
+			s.issueCursor(route, key(page[len(page)-1]))
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"data":     page,
@@ -169,7 +179,7 @@ func (s *Server) paginate(w http.ResponseWriter, r *http.Request, family Family,
 	case PageToken:
 		var next any
 		if more {
-			token := NextPageToken(idOf(page[len(page)-1]))
+			token := NextPageToken(key(page[len(page)-1]))
 			s.issueCursor(route, token)
 			next = token
 		}
