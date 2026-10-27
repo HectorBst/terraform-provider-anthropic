@@ -141,11 +141,10 @@ func TestPluginResource_lifecycle(t *testing.T) {
 // TestPluginResource_pinWhatIsServed: configuring the version an
 // unpinned plugin already serves plans an update that pins it. The API moves
 // updated_at on that pin ("including pinning an unpinned Plugin to the
-// version it already serves", Update Plugin), but the plan keeps the prior
-// updated_at, so Terraform stops with "Provider produced inconsistent result
-// after apply".
+// version it already serves", Update Plugin), so the plan must leave it
+// unknown; a plan that kept the prior updated_at made Terraform stop with
+// "Provider produced inconsistent result after apply".
 func TestPluginResource_pinWhatIsServed(t *testing.T) {
-	t.Skip("bug: pinning the version already served fails with an inconsistent updated_at; see fix/plugins-pin-served-version")
 	t.Parallel()
 	srv := newPluginsFake(t, 0)
 	base := "  source_dir = " + hcl(writePluginDir(t, "sales-toolkit", "1.4.0")) + "\n"
