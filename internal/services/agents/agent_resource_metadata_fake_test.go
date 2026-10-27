@@ -44,10 +44,7 @@ func expectMetadata(metadata map[string]string) []statecheck.StateCheck {
 // expectAgentAction checks the action planned for the agent before the
 // apply, and an empty plan after the refresh that follows it.
 func expectAgentAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(agentAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(agentAddr, action)
 }
 
 // expectStoredMetadata checks the metadata of the one agent the fake holds.

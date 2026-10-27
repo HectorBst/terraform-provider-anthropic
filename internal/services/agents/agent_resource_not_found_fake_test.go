@@ -22,10 +22,7 @@ func agentID(n int) string { return fmt.Sprintf("agent_%024d", n) }
 
 // expectAgentCreated checks that the step creates the agent and that the
 // refresh after the apply plans nothing.
-var expectAgentCreated = resource.ConfigPlanChecks{
-	PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(agentAddr, plancheck.ResourceActionCreate)},
-	PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-}
+var expectAgentCreated = providertest.ExpectAction(agentAddr, plancheck.ResourceActionCreate)
 
 // An agent deleted outside Terraform is dropped by the refresh and re-created
 // from the configuration by the next apply, instead of failing the refresh

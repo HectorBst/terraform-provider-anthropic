@@ -343,6 +343,11 @@ func TestAgentsDataSource_errors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			srv := newAgentsFake(t)
+			if tc.calls > 0 {
+				// The API's 400 for a limit above 100 ("Maximum results per
+				// page. Default 20, maximum 100", agents/list).
+				srv.FailNext(routeListAgents, http.StatusBadRequest, 1)
+			}
 			resource.UnitTest(t, resource.TestCase{
 				ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 				Steps: []resource.TestStep{{

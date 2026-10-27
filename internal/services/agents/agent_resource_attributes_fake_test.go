@@ -27,9 +27,10 @@ func customTool(name, description string, inputSchema knownvalue.Check) knownval
 // execution identity on create, update and removal:
 //   - create sends every configured value, a skill without version is pinned
 //     by the API and the pin lands in state;
-//   - changing the model without model_effort sends no effort, removing
-//     model_speed and model_inference_geo omits them (the API replaces the
-//     model object), and removing description sends "" to clear it;
+//   - changing the model without model_effort sends no effort and takes the
+//     new model's default the API resolves, removing model_speed and
+//     model_inference_geo omits them (the API replaces the model object), and
+//     removing description sends "" to clear it;
 //   - a skill whose version is no longer configured is sent without one;
 //   - an aws_role identity is sent, and removing it sends the service
 //     account, which restores the default;
@@ -117,7 +118,7 @@ resource "anthropic_agent" "test" {
 					expectAttr("name", str("renamed-agent")),
 					expectAttr("model", str("claude-opus-4-6")),
 					expectAttr("model_speed", null),
-					expectAttr("model_effort", str("low")),
+					expectAttr("model_effort", str("high")),
 					expectAttr("model_inference_geo", null),
 					expectAttr("description", null),
 					expectAttr("system", str("You are thorough.")),
