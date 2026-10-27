@@ -88,9 +88,7 @@ A `.env` file at the project root (gitignored) can hold these keys and other mac
 make lint
 ```
 
-`.golangci.yml` reports only code that differs from `origin/main` (`new-from-merge-base`), so code you did not touch never fails your pull request. This relies on `origin` pointing at `ippontech/terraform-provider-anthropic` and being fetched recently: when `origin` is your fork, run `golangci-lint run --new-from-merge-base=upstream/main` (or whatever the upstream remote is called) instead, otherwise the comparison starts from a stale point. If the ref does not exist at all, golangci-lint silently reports every finding in the repository.
-
-`make lint` then runs `golangci-lint run --no-config`, as the CI lint job does: the standard linters (errcheck, govet, ineffassign, staticcheck, unused) on the whole tree. The tree has no finding there, so a change that causes one, even on a line it does not edit (a helper left without callers, for instance), fails.
+`.golangci.yml` lints the whole tree, existing code and new alike, and `make lint` reports 0 issues on `main`: a finding fails your pull request wherever it is. Fix it rather than silence it. When the code is right as it is (a gosec finding by design, a signature an interface imposes), add `//nolint:<linter> // <reason>` on that line, naming one linter and giving the reason; file-wide and configuration-wide exclusions are not accepted.
 
 The pre-commit configuration runs `golangci-lint fmt` (gofmt, plus imports grouped with this module's packages last) on the Go files that differ from `origin/main`: the staged ones on commit, and with `pre-commit run -a` the files your branch changed, never the others. It also runs `golangci-lint run` and `go mod tidy -diff`, at the versions pinned in `mise.toml`.
 

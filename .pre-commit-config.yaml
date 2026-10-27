@@ -84,8 +84,7 @@ repos:
           files=(); for f in "$@"; do grep -qxF -- "$f" <<<"$changed" && files+=("$f"); done;
           [ ${#files[@]} -eq 0 ] || exec mise exec -- golangci-lint fmt "${files[@]}"' --
         types: [go]
-      # Lints the packages, but reports only code that differs from origin/main
-      # (new-from-merge-base in .golangci.yml), as the CI lint job does.
+      # Lints the whole tree, as the CI lint job does.
       - id: golangci-lint
         name: golangci-lint run
         language: system

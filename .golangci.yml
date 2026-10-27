@@ -1,17 +1,12 @@
 # golangci-lint v2 configuration. Run it with `make lint` (the version CI uses
 # is pinned in .github/workflows/provider.yml, the local one in mise.toml).
 #
-# Only code that differs from origin/main is reported (issues.new-from-merge-base):
-# the existing code has about 440 findings under this configuration (none from
-# gocognit since the refactoring lot), and a pull request must not fail on lines
-# it never touched. Remove that setting once the existing code has been brought
-# up to date in one mechanical pull request.
-#
-# The setting filters every linter, so `make lint` and the CI lint job also run
-# `golangci-lint run --no-config`: the standard linters on the whole tree, as
-# before this file existed. The tree has no finding there, and a change that
-# causes one on a line it does not edit (a helper left unused, an error return
-# ignored by an existing caller) still fails.
+# The whole tree is linted, existing code and new code alike, as the complexity
+# cap and the coverage gate check it: `golangci-lint run` reports 0 issues, and
+# a finding fails a pull request wherever it is. When code is right as it is (a
+# gosec finding by design, a signature an interface imposes), silence the one
+# finding on its line with `//nolint:<linter> // <reason>`; add no file-wide or
+# configuration-wide exclusion.
 version: "2"
 
 linters:
@@ -40,13 +35,12 @@ linters:
     gocognit:
       # Cognitive complexity of at most 20 for production code. Tests and the
       # test-helper packages are left out (exclusions below): table-driven tests
-      # read better long. In new-code mode a finding counts when the change adds
-      # or edits its line, the `func` line, so this reports new functions above
-      # 20 (and an existing one whose signature a change edits). The complexity
-      # ratchet (`make complexity`, CI job `complexity`) checks every function,
-      # whichever lines the change edits, against the merge base; since the
-      # refactoring lot no function on main scores above 20, so it is an
-      # absolute cap of 20.
+      # read better long. The whole tree is linted, so this reports every
+      # production function above 20, wherever it is and whichever lines a
+      # change edits. The complexity ratchet (`make complexity`, CI job
+      # `complexity`) stays as the check that compares every function with the
+      # merge base; since the refactoring lot no function on main scores above
+      # 20, so it is an absolute cap of 20 too.
       min-complexity: 20
     exhaustive:
       default-signifies-exhaustive: true
@@ -106,7 +100,6 @@ linters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  new-from-merge-base: origin/main
 
 formatters:
   enable:

@@ -6,11 +6,8 @@ build:
 install: build
 	go install -v ./...
 
-# .golangci.yml reports only code that differs from origin/main; the second
-# run keeps the standard linters on the whole tree.
 lint:
 	golangci-lint run
-	golangci-lint run --no-config
 
 # The complexity ratchet of the CI complexity job (tools/complexity): every
 # function in the non-test Go files under internal/ scores 20 or less, unless
