@@ -4,7 +4,6 @@
 package vaults_test
 
 import (
-	"encoding/json"
 	"maps"
 	"net/http"
 	"strconv"
@@ -30,16 +29,8 @@ func newRefreshScopeFake(t *testing.T) *sdktest.Server {
 	t.Helper()
 	srv := sdktest.NewServer(t)
 	vaultStore, credentialStore := srv.NewCollection("vlt_"), srv.NewCollection("vcrd_")
-	decode := func(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
-			return nil, false
-		}
-		return body, true
-	}
 	srv.Handle("POST /v1/vaults", func(w http.ResponseWriter, r *http.Request) {
-		if body, ok := decode(w, r); ok {
+		if body, ok := srv.DecodeBody(w, r); ok {
 			obj := map[string]any{"type": "vault", "metadata": map[string]any{}, "archived_at": nil}
 			maps.Copy(obj, body)
 			sdktest.WriteJSON(w, http.StatusOK, vaultStore.Create(obj))
@@ -48,7 +39,7 @@ func newRefreshScopeFake(t *testing.T) *sdktest.Server {
 	vaultStore.HandleGet("GET /v1/vaults/{vault_id}")
 	vaultStore.HandleDelete("DELETE /v1/vaults/{vault_id}", "vault_deleted")
 	srv.Handle("POST /v1/vaults/{vault_id}/credentials", func(w http.ResponseWriter, r *http.Request) {
-		if body, ok := decode(w, r); ok {
+		if body, ok := srv.DecodeBody(w, r); ok {
 			auth := body["auth"].(map[string]any)
 			refresh := auth["refresh"].(map[string]any)
 			sdktest.WriteJSON(w, http.StatusOK, credentialStore.Create(map[string]any{
@@ -67,7 +58,7 @@ func newRefreshScopeFake(t *testing.T) *sdktest.Server {
 	srv.Handle("POST /v1/vaults/{vault_id}/credentials/{credential_id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("credential_id")
 		stored, found := credentialStore.Get(id)
-		body, ok := decode(w, r)
+		body, ok := srv.DecodeBody(w, r)
 		if !found || !ok {
 			sdktest.WriteAPIError(w, http.StatusNotFound, "", "credential not found")
 			return
@@ -119,11 +110,8 @@ resource "anthropic_vault_credential" "test" {
 	}
 	step := func(config string, action plancheck.ResourceActionType, scope knownvalue.Check) resource.TestStep {
 		return resource.TestStep{
-			Config: config,
-			ConfigPlanChecks: resource.ConfigPlanChecks{
-				PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-				PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-			},
+			Config:           config,
+			ConfigPlanChecks: providertest.ExpectAction(addr, action),
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("refresh").AtMapKey("scope"), scope),
 			},

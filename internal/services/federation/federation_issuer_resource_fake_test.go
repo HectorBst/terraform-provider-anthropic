@@ -14,6 +14,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 )
 
 const issuerAddr = "anthropic_federation_issuer.test"
@@ -69,7 +71,7 @@ func TestFederationIssuerResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           issuerConfig(githubIssuer),
-				ConfigPlanChecks: expectAction(issuerAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(issuerAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(issuerAddr, map[string]knownvalue.Check{
 					"id": knownvalue.StringExact(issuerID(1)), "name": knownvalue.StringExact("github"),
 					"issuer_url": knownvalue.StringExact("https://token.actions.githubusercontent.com"),
@@ -98,7 +100,7 @@ func TestFederationIssuerResource_lifecycle(t *testing.T) {
     ca_cert_pem = "-----BEGIN CERTIFICATE-----"
   }
 `),
-				ConfigPlanChecks: expectAction(issuerAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(issuerAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(issuerAddr, map[string]knownvalue.Check{
 					"name": knownvalue.StringExact("gitlab"), "check_jti": knownvalue.Bool(false), "max_jwt_lifetime_seconds": knownvalue.Int64Exact(7200),
 					"jwks": jwks("explicit_url", map[string]knownvalue.Check{
@@ -116,7 +118,7 @@ func TestFederationIssuerResource_lifecycle(t *testing.T) {
     keys = jsonencode([{ kty = "RSA", kid = "k1", n = "abc", e = "AQAB" }])
   }
 `),
-				ConfigPlanChecks: expectAction(issuerAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(issuerAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(issuerAddr, map[string]knownvalue.Check{
 					"jwks":        jwks("inline", map[string]knownvalue.Check{"keys": knownvalue.StringExact(`[{"e":"AQAB","kid":"k1","kty":"RSA","n":"abc"}]`)}),
 					"poll_status": knownvalue.Null(),
@@ -131,7 +133,7 @@ func TestFederationIssuerResource_lifecycle(t *testing.T) {
     discovery_base = "https://gitlab.example.com/.well-known"
   }
 `),
-				ConfigPlanChecks: expectAction(issuerAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(issuerAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(issuerAddr, map[string]knownvalue.Check{
 					"max_jwt_lifetime_seconds": knownvalue.Int64Exact(3600),
 					"jwks":                     jwks("discovery", map[string]knownvalue.Check{"discovery_base": knownvalue.StringExact("https://gitlab.example.com/.well-known")}),
@@ -167,7 +169,7 @@ func TestFederationIssuerResource_reenablePolling(t *testing.T) {
 			{
 				// Polling runs: nothing to send, the issuer is read back.
 				Config:            reenable,
-				ConfigPlanChecks:  expectAction(issuerAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(issuerAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(issuerAddr, map[string]knownvalue.Check{"jwks_polling_disabled": knownvalue.Bool(false)}),
 			},
 			{
@@ -177,7 +179,7 @@ func TestFederationIssuerResource_reenablePolling(t *testing.T) {
 					srv.issuers.Put(o)
 				},
 				Config:            reenable,
-				ConfigPlanChecks:  expectAction(issuerAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(issuerAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(issuerAddr, map[string]knownvalue.Check{"jwks_polling_disabled_at": knownvalue.Null()}),
 			},
 		},
@@ -226,7 +228,7 @@ func TestFederationIssuerResource_goneOutOfBand(t *testing.T) {
 			{
 				PreConfig:         func() { srv.issuers.Delete(issuerID(1)) },
 				Config:            cfg,
-				ConfigPlanChecks:  expectAction(issuerAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(issuerAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(issuerAddr, map[string]knownvalue.Check{"id": knownvalue.StringExact(issuerID(2))}),
 			},
 			{

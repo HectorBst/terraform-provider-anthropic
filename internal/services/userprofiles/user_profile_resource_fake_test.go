@@ -38,10 +38,7 @@ resource "anthropic_user_profile" "test" {
 // expectAction checks the action the step plans for the profile and that
 // the refresh after the apply plans nothing.
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(profileAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(profileAddr, action)
 }
 
 func stringOrNull(s string) knownvalue.Check {

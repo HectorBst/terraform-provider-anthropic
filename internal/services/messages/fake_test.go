@@ -239,8 +239,7 @@ func orDefault(v, def string) string {
 // and no beta header (the count_tokens note in this package's CLAUDE.md).
 func (f *messagesFake) assertRequestShape(routes ...string) {
 	for _, route := range routes {
-		f.AssertCredential(route, sdktest.APIKey)
-		f.AssertNoBeta(route)
+		f.AssertShape(sdktest.Shape{Credential: sdktest.APIKey}, route)
 	}
 }
 
@@ -267,8 +266,5 @@ func expect(addr string, values map[string]knownvalue.Check) []statecheck.StateC
 // expectAction checks the planned action of anthropic_message.test and an
 // empty plan after the apply and a refresh.
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(messageAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(messageAddr, action)
 }

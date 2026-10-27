@@ -96,12 +96,12 @@ func TestOrganizationMemberResource_lifecycle(t *testing.T) {
 			importMember(1, "developer"),
 			{
 				Config:            memberConfig(userID(1), "developer"),
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectMember(1, "developer"),
 			},
 			{
 				Config:            memberConfig(userID(1), "user"),
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectMember(1, "user"),
 			},
 			{
@@ -112,7 +112,7 @@ func TestOrganizationMemberResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:           memberConfig(userID(1), "user", true),
-				ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionUpdate),
 			},
 		},
 	})
@@ -144,7 +144,7 @@ func TestOrganizationMemberResource_createAdopts(t *testing.T) {
 			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 			Steps: []resource.TestStep{{
 				Config:            memberConfig(userID(1), "developer", true),
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMember(1, "developer"),
 			}},
 		})
@@ -218,12 +218,12 @@ func TestOrganizationMemberResource_deleteNotFound(t *testing.T) {
 			importMember(1, "developer"),
 			{
 				Config:           memberConfig(userID(1), "developer", true),
-				ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionUpdate),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeDeleteUser, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AdminKey),
-				ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})

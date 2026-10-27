@@ -4,7 +4,6 @@
 package vaults_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -86,18 +85,9 @@ func config(blocks string) string {
 	return providertest.ProviderConfig(sdktest.APIKey) + blocks
 }
 
-func decode(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
-		return nil, false
-	}
-	return body, true
-}
-
 // createVault stores a vault; metadata defaults to {} (always returned).
 func (f *vaultsFake) createVault(w http.ResponseWriter, r *http.Request) {
-	body, ok := decode(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -131,7 +121,7 @@ func (f *vaultsFake) update(c *sdktest.Collection, idParam string, merge func(st
 			sdktest.WriteAPIError(w, http.StatusNotFound, "", fmt.Sprintf("%s %s not found", idParam, id))
 			return
 		}
-		body, ok := decode(w, r)
+		body, ok := f.DecodeBody(w, r)
 		if !ok {
 			return
 		}
@@ -156,7 +146,7 @@ func (f *vaultsFake) createCredential(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "vault "+vaultID+" not found")
 		return
 	}
-	body, ok := decode(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -230,10 +220,5 @@ func mergeRefresh(stored any, body map[string]any) map[string]any {
 // assertRequestShape checks the managed-agents beta and the standard key on
 // every route called.
 func (f *vaultsFake) assertRequestShape() {
-	for _, route := range allVaultRoutes {
-		if len(f.Requests(route)) > 0 {
-			f.AssertBeta(route, managedAgentsBeta)
-			f.AssertCredential(route, sdktest.APIKey)
-		}
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.APIKey, Beta: managedAgentsBeta}, allVaultRoutes...)
 }

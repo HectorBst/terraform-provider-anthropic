@@ -123,12 +123,9 @@ func TestPluginVersionResource_lifecycle(t *testing.T) {
 			{
 				// A version that answers 404 on refresh is gone: it leaves the
 				// state, and the apply uploads a new one.
-				PreConfig: func() { srv.FailNext(routeGetVersion, http.StatusNotFound, 1) },
-				Config:    config,
-				ConfigPlanChecks: resource.ConfigPlanChecks{
-					PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(versionAddr, plancheck.ResourceActionCreate)},
-					PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-				},
+				PreConfig:        func() { srv.FailNext(routeGetVersion, http.StatusNotFound, 1) },
+				Config:           config,
+				ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(versionAddr, tfjsonpath.New("id"), knownvalue.StringExact("pluginver_0005")),
 				},

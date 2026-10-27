@@ -78,7 +78,7 @@ func TestMemoryResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            memoryConfig(first, "/notes/todo.md", "buy milk"),
-				ConfigPlanChecks:  expectAction(memoryAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(memoryAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMemory(memoryID(1), first, "/notes/todo.md", "buy milk", versionID(1), at(1), at(1)),
 			},
 			{
@@ -90,17 +90,17 @@ func TestMemoryResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            memoryConfig(first, "/notes/todo.md", "buy oat milk"),
-				ConfigPlanChecks:  expectAction(memoryAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(memoryAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectMemory(memoryID(1), first, "/notes/todo.md", "buy oat milk", versionID(2), at(1), at(2)),
 			},
 			{
 				Config:            memoryConfig(first, "/notes/done.md", "buy oat milk"),
-				ConfigPlanChecks:  expectAction(memoryAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(memoryAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectMemory(memoryID(1), first, "/notes/done.md", "buy oat milk", versionID(3), at(1), at(3)),
 			},
 			{
 				Config:            memoryConfig(second, "/notes/done.md", "buy oat milk"),
-				ConfigPlanChecks:  expectAction(memoryAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(memoryAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectMemory(memoryID(2), second, "/notes/done.md", "buy oat milk", versionID(5), at(4), at(4)),
 			},
 		},
@@ -145,17 +145,17 @@ func TestMemoryResource_removedOutsideTerraform(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(memoryAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(memoryAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.memories.Delete(memoryID(1)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(memoryAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(memoryAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMemory(memoryID(2), store, "/gone.md", "x", versionID(2), at(2), at(2)),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeDeleteMemory, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.APIKey),
-				ConfigPlanChecks: expectAction(memoryAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(memoryAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -177,7 +177,7 @@ func TestMemoryResource_modifiedOutOfBand(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             srv.checkNoMemory,
 		Steps: []resource.TestStep{
-			{Config: memoryConfig(store, "/doc.md", "v1"), ConfigPlanChecks: expectAction(memoryAddr, plancheck.ResourceActionCreate)},
+			{Config: memoryConfig(store, "/doc.md", "v1"), ConfigPlanChecks: providertest.ExpectAction(memoryAddr, plancheck.ResourceActionCreate)},
 			{
 				// The precondition the update sends no longer matches: the
 				// refresh read "v1", then another writer changed it.
@@ -216,7 +216,7 @@ func TestMemoryResource_apiErrors(t *testing.T) {
 				Config:      memoryConfig(store, "/taken.md", "mine"),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+create\s+memory:.*409.*already\s+exists`),
 			},
-			{Config: memoryConfig(store, "/mine.md", "mine"), ConfigPlanChecks: expectAction(memoryAddr, plancheck.ResourceActionCreate)},
+			{Config: memoryConfig(store, "/mine.md", "mine"), ConfigPlanChecks: providertest.ExpectAction(memoryAddr, plancheck.ResourceActionCreate)},
 			{
 				Config:      memoryConfig(store, "/taken.md", "mine"),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+update\s+memory:.*409.*already\s+exists`),

@@ -42,13 +42,6 @@ func tunnelConfig(extra string) string {
 	return providertest.ProviderConfig(sdktest.AuthToken) + tunnelBlock(extra)
 }
 
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
-}
-
 func stringOrNull(s string) knownvalue.Check {
 	if s == "" {
 		return knownvalue.Null()
@@ -103,23 +96,23 @@ func TestTunnelResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            tunnelConfig("  display_name = \"corp\"\n"),
-				ConfigPlanChecks:  expectAction(tunnelAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectTunnel(1, "corp", "", 1, 1),
 			},
 			{Config: tunnelConfig("  display_name = \"corp\"\n"), ResourceName: tunnelAddr, ImportState: true, ImportStateVerify: true},
 			{
 				Config:            tunnelConfig("  display_name = \"corp\"\n  token_rotation = \"v1\"\n"),
-				ConfigPlanChecks:  expectAction(tunnelAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectTunnel(1, "corp", "v1", 1, 1),
 			},
 			{
 				Config:            tunnelConfig("  display_name = \"corp\"\n  token_rotation = \"v2\"\n"),
-				ConfigPlanChecks:  expectAction(tunnelAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectTunnel(1, "corp", "v2", 1, 2),
 			},
 			{
 				Config:            tunnelConfig("  display_name = \"corp-2\"\n  token_rotation = \"v2\"\n"),
-				ConfigPlanChecks:  expectAction(tunnelAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectTunnel(2, "corp-2", "v2", 3, 3),
 			},
 		},
@@ -151,23 +144,23 @@ func TestTunnelResource_goneOutsideTerraform(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(tunnelAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.tunnels.Archive(tunnelID(1)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(tunnelAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectTunnel(2, "", "", 3, 2),
 			},
 			{
 				PreConfig:         func() { srv.tunnels.Delete(tunnelID(2)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(tunnelAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectTunnel(3, "", "", 4, 3),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeArchiveTunnel, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AuthToken),
-				ConfigPlanChecks: expectAction(tunnelAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -197,7 +190,7 @@ func TestTunnelResource_revealFailure(t *testing.T) {
 			},
 			{
 				Config:            config,
-				ConfigPlanChecks:  expectAction(tunnelAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectTunnel(2, "tainted", "", 3, 2),
 			},
 		},
@@ -227,7 +220,7 @@ func TestTunnelResource_apiErrors(t *testing.T) {
 				Config:      tunnelConfig("  token_rotation = \"a\"\n"),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+create\s+tunnel:.*500`),
 			},
-			{Config: tunnelConfig("  token_rotation = \"a\"\n"), ConfigPlanChecks: expectAction(tunnelAddr, plancheck.ResourceActionCreate)},
+			{Config: tunnelConfig("  token_rotation = \"a\"\n"), ConfigPlanChecks: providertest.ExpectAction(tunnelAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetTunnel, http.StatusForbidden, 1) },
 				Config:      tunnelConfig("  token_rotation = \"a\"\n"),

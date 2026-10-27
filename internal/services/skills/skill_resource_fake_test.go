@@ -62,13 +62,6 @@ func expectSkill(id, title, createdAt, updatedAt, latest string, forceDestroy bo
 	}
 }
 
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
-}
-
 // TestSkillResource_lifecycle creates a skill from a nested bundle, imports
 // it, replaces it on a display_title change (the attribute is
 // RequiresReplace) and destroys it with its versions (force_destroy).
@@ -84,7 +77,7 @@ func TestSkillResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            skillConfig(files, "  display_title = \"Pilot\"\n  force_destroy = true\n"),
-				ConfigPlanChecks:  expectAction(skillAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectSkill(skillID(1), "Pilot", at(1), at(2), version(1), true, files),
 			},
 			{
@@ -96,7 +89,7 @@ func TestSkillResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            skillConfig(files, "  display_title = \"Pilot renamed\"\n  force_destroy = true\n"),
-				ConfigPlanChecks:  expectAction(skillAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(skillAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectSkill(skillID(2), "Pilot renamed", at(3), at(4), version(2), true, files),
 			},
 		},
@@ -134,7 +127,7 @@ func TestSkillResource_withoutDisplayTitle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            skillConfig(files, "  force_destroy = true\n"),
-				ConfigPlanChecks:  expectAction(skillAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectSkill(skillID(1), "", at(1), at(2), version(1), true, files),
 			},
 			{
@@ -172,11 +165,11 @@ func TestSkillResource_removedOutsideTerraform(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             func(*terraform.State) error { return srv.checkEmpty() },
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(skillAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.deleteOutOfBand(skillID(1)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(skillAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectSkill(skillID(2), "", at(3), at(4), version(2), true, files),
 			},
 		},
@@ -196,7 +189,7 @@ func TestSkillResource_deleteToleratesNotFound(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           skillConfig(files, "  force_destroy = true\n"),
-				ConfigPlanChecks: expectAction(skillAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate),
 				Check: func(*terraform.State) error {
 					// A second version, uploaded outside this configuration.
 					srv.newVersion(skillID(1), bundle{dir: "racing", name: "racing"})
@@ -209,7 +202,7 @@ func TestSkillResource_deleteToleratesNotFound(t *testing.T) {
 					srv.FailNext(routeDeleteSkill, http.StatusNotFound, 1)
 				},
 				Config:           providertest.ProviderConfig(sdktest.APIKey),
-				ConfigPlanChecks: expectAction(skillAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(skillAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -242,7 +235,7 @@ func TestSkillResource_withoutForceDestroy(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            skillConfig(files, ""),
-				ConfigPlanChecks:  expectAction(skillAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectSkill(skillID(1), "", at(1), at(2), version(1), false, files),
 			},
 			{
@@ -256,7 +249,7 @@ func TestSkillResource_withoutForceDestroy(t *testing.T) {
 					}
 				},
 				Config:           providertest.ProviderConfig(sdktest.APIKey),
-				ConfigPlanChecks: expectAction(skillAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(skillAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -279,7 +272,7 @@ func TestSkillResource_forceDestroyPagesThroughVersions(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           skillConfig(files, "  force_destroy = true\n"),
-				ConfigPlanChecks: expectAction(skillAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate),
 				Check: func(*terraform.State) error {
 					// Two more versions, uploaded outside this configuration.
 					srv.newVersion(skillID(1), bundle{dir: "versioned", name: "versioned"})
@@ -316,7 +309,7 @@ func TestSkillResource_toggleForceDestroy(t *testing.T) {
 	srv := newSkillsFake(t, 0)
 	files := []string{hclPath(writeBundle(t, "toggled", "Toggled.")[0])}
 
-	toggle := expectAction(skillAddr, plancheck.ResourceActionUpdate)
+	toggle := providertest.ExpectAction(skillAddr, plancheck.ResourceActionUpdate)
 	toggle.PreApply = append(toggle.PreApply,
 		plancheck.ExpectKnownValue(skillAddr, tfjsonpath.New("updated_at"), knownvalue.StringExact(at(2))),
 		plancheck.ExpectKnownValue(skillAddr, tfjsonpath.New("latest_version"), knownvalue.StringExact(version(1))),
@@ -326,7 +319,7 @@ func TestSkillResource_toggleForceDestroy(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             func(*terraform.State) error { return srv.checkEmpty() },
 		Steps: []resource.TestStep{
-			{Config: skillConfig(files, ""), ConfigPlanChecks: expectAction(skillAddr, plancheck.ResourceActionCreate)},
+			{Config: skillConfig(files, ""), ConfigPlanChecks: providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate)},
 			{
 				Config:            skillConfig(files, "  force_destroy = true\n"),
 				ConfigPlanChecks:  toggle,

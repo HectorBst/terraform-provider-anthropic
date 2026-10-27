@@ -4,7 +4,6 @@
 package userprofiles_test
 
 import (
-	"encoding/json"
 	"net/http"
 	"slices"
 	"testing"
@@ -73,7 +72,7 @@ func (f *profilesFake) newProfile(accessType, externalID, name any, metadata map
 // create refuses an empty metadata value ("Values must be non-empty
 // strings", create reference).
 func (f *profilesFake) create(w http.ResponseWriter, r *http.Request) {
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -96,7 +95,7 @@ func (f *profilesFake) update(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "user profile "+id+" not found")
 		return
 	}
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -109,26 +108,5 @@ func (f *profilesFake) update(w http.ResponseWriter, r *http.Request) {
 // called.
 func (f *profilesFake) assertRequestShape(t *testing.T) {
 	t.Helper()
-	for _, route := range allRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		f.AssertBeta(route, userProfilesBeta)
-		f.AssertCredential(route, sdktest.APIKey)
-		for _, r := range f.Requests(route) {
-			if r.Query.Get("beta") != "true" {
-				t.Errorf("%s %s without ?beta=true", r.Method, r.Path)
-			}
-		}
-	}
-}
-
-// decodeBody reads a JSON object body or answers 400 invalid_request_error.
-func decodeBody(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	body := map[string]any{}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not a JSON object: "+err.Error())
-		return nil, false
-	}
-	return body, true
+	f.AssertShape(sdktest.Shape{Credential: sdktest.APIKey, Beta: userProfilesBeta, BetaQuery: true}, allRoutes...)
 }

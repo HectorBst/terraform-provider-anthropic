@@ -231,18 +231,7 @@ func (f *skillsFake) checkEmpty() error {
 // skills beta, the standard key and ?beta=true, on every route called.
 func (f *skillsFake) assertRequestShape(t *testing.T) {
 	t.Helper()
-	for _, route := range allRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		f.AssertBeta(route, skillsBeta)
-		f.AssertCredential(route, sdktest.APIKey)
-		for _, r := range f.Requests(route) {
-			if r.Query.Get("beta") != "true" {
-				t.Errorf("%s %s without ?beta=true", r.Method, r.Path)
-			}
-		}
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.APIKey, Beta: skillsBeta, BetaQuery: true}, allRoutes...)
 }
 
 // uploadedFiles returns the files ("field=filename") and the other fields

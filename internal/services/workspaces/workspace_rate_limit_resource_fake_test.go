@@ -109,7 +109,7 @@ func TestWorkspaceRateLimitResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            limitConfig(sonnetLimits.id, first),
-				ConfigPlanChecks:  expectAction(limitAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(limitAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectLimits(sonnetLimits, first),
 			},
 			{
@@ -120,7 +120,7 @@ func TestWorkspaceRateLimitResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            limitConfig(sonnetLimits.id, second),
-				ConfigPlanChecks:  expectAction(limitAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(limitAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectLimits(sonnetLimits, second),
 			},
 		},
@@ -150,13 +150,13 @@ func TestWorkspaceRateLimitResource_unmanagedOverridesKept(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            limitConfig(batchLimits.id, managed),
-				ConfigPlanChecks:  expectAction(limitAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(limitAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectLimits(batchLimits, managed),
 			},
 			{
 				PreConfig:         func() { srv.clearOverride(workspaceID(1), batchLimits.id, "requests_per_minute") },
 				Config:            limitConfig(batchLimits.id, managed),
-				ConfigPlanChecks:  expectAction(limitAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(limitAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectLimits(batchLimits, managed),
 			},
 		},
@@ -178,7 +178,7 @@ func TestWorkspaceRateLimitResource_workspaceGone(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(limitAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(limitAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig: func() { srv.deleteWS(workspaceID(1)) },
 				Config:    config,
@@ -229,7 +229,7 @@ func TestWorkspaceRateLimitResource_importEveryOverride(t *testing.T) {
 			},
 			{
 				Config:            limitConfig(sonnetLimits.id, imported),
-				ConfigPlanChecks:  expectAction(limitAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(limitAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectLimits(sonnetLimits, imported),
 			},
 		},
@@ -246,11 +246,11 @@ func TestWorkspaceRateLimitResource_clearNotFound(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: limitConfig(batchLimits.id, map[string]int64{"requests_per_minute": 5}), ConfigPlanChecks: expectAction(limitAddr, plancheck.ResourceActionCreate)},
+			{Config: limitConfig(batchLimits.id, map[string]int64{"requests_per_minute": 5}), ConfigPlanChecks: providertest.ExpectAction(limitAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:        func() { srv.FailNext(routeSetWSLimits, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AdminKey),
-				ConfigPlanChecks: expectAction(limitAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(limitAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -275,7 +275,7 @@ func TestWorkspaceRateLimitResource_apiErrors(t *testing.T) {
 				Config:      config(1),
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+set\s+workspace\s+rate-limit\s+overrides:\s+API\s+error\s+\(400\s+invalid_request_error\)`),
 			},
-			{Config: config(1), ConfigPlanChecks: expectAction(limitAddr, plancheck.ResourceActionCreate)},
+			{Config: config(1), ConfigPlanChecks: providertest.ExpectAction(limitAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeListWSLimits, http.StatusForbidden, 1) },
 				Config:      config(1),

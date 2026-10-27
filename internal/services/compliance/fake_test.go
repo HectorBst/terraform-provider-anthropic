@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
@@ -92,26 +93,12 @@ func (f *complianceFake) updateSettings(w http.ResponseWriter, r *http.Request) 
 // expectAction checks the planned action on the settings resource, then an
 // empty plan after the apply and refresh.
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(settingsAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(settingsAddr, action)
 }
 
 // assertRequests checks that every route the fake received carried the
 // Admin key alone and no beta header.
 func (f *complianceFake) assertRequests(t *testing.T) {
 	t.Helper()
-	n := 0
-	for _, route := range allRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		n++
-		f.AssertCredential(route, sdktest.AdminKey)
-		f.AssertNoBeta(route)
-	}
-	if n == 0 {
-		t.Fatal("the fake received no request")
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AdminKey}, allRoutes...)
 }

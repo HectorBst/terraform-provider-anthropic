@@ -54,10 +54,7 @@ func expectEnvironment(description string, metadata map[string]string) []statech
 // expectEnvironmentAction checks the action planned for the environment
 // before the apply, and an empty plan after the refresh that follows it.
 func expectEnvironmentAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(environmentAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(environmentAddr, action)
 }
 
 // expectStoredEnvironment checks the one environment the fake holds.

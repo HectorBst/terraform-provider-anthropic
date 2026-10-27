@@ -83,7 +83,7 @@ func TestSkillVersionResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            skillAndVersionConfig(skillFiles, v2),
-				ConfigPlanChecks:  expectAction(versionAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectVersion(2, "Second upload.", at(2), v2),
 			},
 			{
@@ -148,7 +148,7 @@ func TestSkillVersionResource_importRejectsMalformedID(t *testing.T) {
 	v2 := hclPaths(writeBundle(t, "pilot-skill", "Second upload."))
 	config := skillAndVersionConfig(skillFiles, v2)
 
-	steps := []resource.TestStep{{Config: config, ConfigPlanChecks: expectAction(versionAddr, plancheck.ResourceActionCreate)}}
+	steps := []resource.TestStep{{Config: config, ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate)}}
 	for _, id := range []string{"no-separator", "/" + version(2), skillID(1) + "/"} {
 		steps = append(steps, resource.TestStep{
 			Config:        config,
@@ -178,11 +178,11 @@ func TestSkillVersionResource_removedOutsideTerraform(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             func(*terraform.State) error { return srv.checkEmpty() },
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(versionAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.versions.Delete(version(2)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(versionAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectVersion(3, "Second upload.", at(3), v2),
 			},
 		},
@@ -203,12 +203,12 @@ func TestSkillVersionResource_deleteToleratesNotFound(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           skillAndVersionConfig(skillFiles, v2),
-				ConfigPlanChecks: expectAction(versionAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeDeleteVersion, http.StatusNotFound, 1) },
 				Config:           skillConfig(skillFiles, "  force_destroy = true\n"),
-				ConfigPlanChecks: expectAction(versionAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})

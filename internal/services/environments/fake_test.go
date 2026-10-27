@@ -4,7 +4,6 @@
 package environments_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -87,7 +86,7 @@ resource "anthropic_environment" "test" {
 // packages, the defaults of the create reference; a config in the body is
 // completed as applyConfig says.
 func (f *environmentsFake) create(w http.ResponseWriter, r *http.Request) {
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -118,7 +117,7 @@ func (f *environmentsFake) update(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "environment "+id+" not found")
 		return
 	}
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -190,18 +189,7 @@ func applyNetworking(prev, body map[string]any) map[string]any {
 // managed-agents beta, the standard key and ?beta=true, on every route called.
 func (f *environmentsFake) assertRequestShape(t *testing.T) {
 	t.Helper()
-	for _, route := range allEnvironmentRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		f.AssertBeta(route, managedAgentsBeta)
-		f.AssertCredential(route, sdktest.APIKey)
-		for _, r := range f.Requests(route) {
-			if r.Query.Get("beta") != "true" {
-				t.Errorf("%s %s without ?beta=true", r.Method, r.Path)
-			}
-		}
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.APIKey, Beta: managedAgentsBeta, BetaQuery: true}, allEnvironmentRoutes...)
 }
 
 // checkEnvironmentsDeleted is a CheckDestroy: no environment may be left in
@@ -213,17 +201,4 @@ func checkEnvironmentsDeleted(srv *environmentsFake) resource.TestCheckFunc {
 		}
 		return nil
 	}
-}
-
-// decodeBody reads a JSON object body, numbers kept as json.Number, or
-// answers 400 invalid_request_error.
-func decodeBody(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	body := map[string]any{}
-	dec := json.NewDecoder(r.Body)
-	dec.UseNumber()
-	if err := dec.Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not a JSON object: "+err.Error())
-		return nil, false
-	}
-	return body, true
 }

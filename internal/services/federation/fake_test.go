@@ -116,9 +116,8 @@ func config(blocks string) string {
 // fields the update omits.
 func (f *federationFake) write(c *sdktest.Collection, idParam string, apply func(stored, body map[string]any, update bool) map[string]any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
+		body, ok := f.DecodeBody(w, r)
+		if !ok {
 			return
 		}
 		if attrs, _ := body["attributes"].(map[string]any); idParam == "" && len(attrs) > 0 {
@@ -254,10 +253,5 @@ func (f *federationFake) ruleMustExist(h http.HandlerFunc) http.HandlerFunc {
 // assertRequestShape checks the OAuth bearer and the absence of a beta header
 // on every route called.
 func (f *federationFake) assertRequestShape() {
-	for _, route := range allFederationRoutes {
-		if len(f.Requests(route)) > 0 {
-			f.AssertNoBeta(route)
-			f.AssertCredential(route, sdktest.AuthToken)
-		}
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AuthToken}, allFederationRoutes...)
 }

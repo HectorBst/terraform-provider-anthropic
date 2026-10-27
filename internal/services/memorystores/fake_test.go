@@ -89,7 +89,7 @@ func (f *memoryFake) newStore(name, description string, metadata map[string]any)
 }
 
 func (f *memoryFake) createStore(w http.ResponseWriter, r *http.Request) {
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -119,7 +119,7 @@ func (f *memoryFake) updateStore(w http.ResponseWriter, r *http.Request) {
 	if !f.liveStore(w, id) {
 		return
 	}
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -196,7 +196,7 @@ func (f *memoryFake) createMemory(w http.ResponseWriter, r *http.Request) {
 	if !f.liveStore(w, storeID) {
 		return
 	}
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok || f.pathTaken(w, storeID, "", fmt.Sprint(body["path"])) {
 		return
 	}
@@ -343,26 +343,5 @@ func (f *memoryFake) paginate(w http.ResponseWriter, r *http.Request, pageSize i
 // memory beta, the standard key and ?beta=true, on every route called.
 func (f *memoryFake) assertRequestShape(t *testing.T) {
 	t.Helper()
-	for _, route := range allRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		f.AssertBeta(route, memoryBeta)
-		f.AssertCredential(route, sdktest.APIKey)
-		for _, r := range f.Requests(route) {
-			if r.Query.Get("beta") != "true" {
-				t.Errorf("%s %s without ?beta=true", r.Method, r.Path)
-			}
-		}
-	}
-}
-
-// decodeBody reads a JSON object body or answers 400 invalid_request_error.
-func decodeBody(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	body := map[string]any{}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not a JSON object: "+err.Error())
-		return nil, false
-	}
-	return body, true
+	f.AssertShape(sdktest.Shape{Credential: sdktest.APIKey, Beta: memoryBeta, BetaQuery: true}, allRoutes...)
 }

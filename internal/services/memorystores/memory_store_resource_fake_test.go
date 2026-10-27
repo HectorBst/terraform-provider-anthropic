@@ -38,13 +38,6 @@ resource "anthropic_memory_store" "test" {
 `
 }
 
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
-}
-
 // stringMap is the exact check of a map of strings, or of null when m is
 // nil.
 func stringMap(m map[string]string) knownvalue.Check {
@@ -99,7 +92,7 @@ func TestMemoryStoreResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            storeConfig("  name = \"notes\"\n  description = \"Team notes\"\n  metadata = { team = \"core\", env = \"dev\" }\n"),
-				ConfigPlanChecks:  expectAction(storeAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(storeAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectStore(storeID(1), "notes", "Team notes", map[string]string{"team": "core", "env": "dev"}, at(1), "", false),
 			},
 			{
@@ -110,17 +103,17 @@ func TestMemoryStoreResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            storeConfig("  name = \"notes-v2\"\n  description = \"Team notes v2\"\n  metadata = { team = \"platform\" }\n"),
-				ConfigPlanChecks:  expectAction(storeAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(storeAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectStore(storeID(1), "notes-v2", "Team notes v2", map[string]string{"team": "platform"}, at(1), "", false),
 			},
 			{
 				Config:            storeConfig("  name = \"notes-v2\"\n  description = \"Team notes v2\"\n  metadata = {}\n"),
-				ConfigPlanChecks:  expectAction(storeAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(storeAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectStore(storeID(1), "notes-v2", "Team notes v2", map[string]string{}, at(1), "", false),
 			},
 			{
 				Config:            storeConfig("  name = \"notes-v2\"\n  description = \"Team notes v2\"\n  metadata = {}\n  archive_on_destroy = true\n"),
-				ConfigPlanChecks:  expectAction(storeAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(storeAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectStore(storeID(1), "notes-v2", "Team notes v2", map[string]string{}, at(1), "", true),
 			},
 		},
@@ -155,19 +148,19 @@ func TestMemoryStoreResource_deleteAndRecreate(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            config,
-				ConfigPlanChecks:  expectAction(storeAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(storeAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectStore(storeID(1), "scratch", "", nil, at(1), "", false),
 			},
 			{
 				PreConfig:         func() { srv.stores.Delete(storeID(1)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(storeAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(storeAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectStore(storeID(2), "scratch", "", nil, at(2), "", false),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeDeleteStore, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.APIKey),
-				ConfigPlanChecks: expectAction(storeAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(storeAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -190,12 +183,12 @@ func TestMemoryStoreResource_archivedOutsideTerraform(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           storeConfig("  name = \"kept\"\n  description = \"Kept\"\n  archive_on_destroy = true\n"),
-				ConfigPlanChecks: expectAction(storeAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(storeAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig:         func() { srv.stores.Archive(storeID(1)) },
 				Config:            storeConfig("  name = \"kept\"\n  description = \"Kept\"\n  archive_on_destroy = true\n"),
-				ConfigPlanChecks:  expectAction(storeAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(storeAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectStore(storeID(1), "kept", "Kept", nil, at(1), at(2), true),
 			},
 			{
@@ -234,7 +227,7 @@ func TestMemoryStoreResource_apiErrors(t *testing.T) {
 				Config:      config("errors", false),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+create\s+memory\s+store:.*400`),
 			},
-			{Config: config("errors", false), ConfigPlanChecks: expectAction(storeAddr, plancheck.ResourceActionCreate)},
+			{Config: config("errors", false), ConfigPlanChecks: providertest.ExpectAction(storeAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetStore, http.StatusForbidden, 1) },
 				Config:      config("errors", false),
@@ -250,7 +243,7 @@ func TestMemoryStoreResource_apiErrors(t *testing.T) {
 				Config:      providertest.ProviderConfig(sdktest.APIKey),
 				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+delete\s+memory\s+store:.*400`),
 			},
-			{Config: config("errors", true), ConfigPlanChecks: expectAction(storeAddr, plancheck.ResourceActionUpdate)},
+			{Config: config("errors", true), ConfigPlanChecks: providertest.ExpectAction(storeAddr, plancheck.ResourceActionUpdate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeArchiveStore, http.StatusBadRequest, 1) },
 				Config:      providertest.ProviderConfig(sdktest.APIKey),
@@ -259,7 +252,7 @@ func TestMemoryStoreResource_apiErrors(t *testing.T) {
 			{
 				PreConfig:        func() { srv.FailNext(routeArchiveStore, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.APIKey),
-				ConfigPlanChecks: expectAction(storeAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(storeAddr, plancheck.ResourceActionDestroy),
 			},
 			{
 				// Gone for good: archive_on_destroy kept the 404'd store, so

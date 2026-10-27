@@ -4,7 +4,6 @@
 package vaults_test
 
 import (
-	"encoding/json"
 	"maps"
 	"net/http"
 	"testing"
@@ -29,16 +28,8 @@ func newEmptyMetadataFake(t *testing.T) *sdktest.Server {
 	t.Helper()
 	srv := sdktest.NewServer(t)
 	vaultStore, credentialStore := srv.NewCollection("vlt_"), srv.NewCollection("vcrd_")
-	decode := func(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
-			return nil, false
-		}
-		return body, true
-	}
 	srv.Handle("POST /v1/vaults", func(w http.ResponseWriter, r *http.Request) {
-		if body, ok := decode(w, r); ok {
+		if body, ok := srv.DecodeBody(w, r); ok {
 			obj := map[string]any{"type": "vault", "metadata": map[string]any{}, "archived_at": nil}
 			maps.Copy(obj, body)
 			sdktest.WriteJSON(w, http.StatusOK, vaultStore.Create(obj))
@@ -48,7 +39,7 @@ func newEmptyMetadataFake(t *testing.T) *sdktest.Server {
 	vaultStore.HandleUpdate("POST /v1/vaults/{vault_id}", sdktest.Patch)
 	vaultStore.HandleDelete("DELETE /v1/vaults/{vault_id}", "vault_deleted")
 	srv.Handle("POST /v1/vaults/{vault_id}/credentials", func(w http.ResponseWriter, r *http.Request) {
-		if body, ok := decode(w, r); ok {
+		if body, ok := srv.DecodeBody(w, r); ok {
 			auth := body["auth"].(map[string]any)
 			obj := map[string]any{
 				"type": "vault_credential", "vault_id": r.PathValue("vault_id"), "metadata": map[string]any{}, "archived_at": nil,
@@ -97,10 +88,7 @@ resource "anthropic_vault_credential" "test" {
 		}
 	}
 	actions := func(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-		return resource.ConfigPlanChecks{
-			PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction("anthropic_vault.test", action)},
-			PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-		}
+		return providertest.ExpectAction("anthropic_vault.test", action)
 	}
 
 	resource.UnitTest(t, resource.TestCase{

@@ -15,6 +15,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 )
 
 const vaultAddr = "anthropic_vault.test"
@@ -33,13 +35,6 @@ resource "anthropic_vault" "test" {
   display_name = "team vault"
 ` + extra + `}
 `)
-}
-
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
 }
 
 // expect checks attributes of addr in state.
@@ -79,7 +74,7 @@ func TestVaultResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           vaultConfig("  metadata = { team = \"a\", env = \"dev\" }\n"),
-				ConfigPlanChecks: expectAction(vaultAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(vaultAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(vaultAddr, map[string]knownvalue.Check{
 					"id":                 knownvalue.StringExact(vaultID(1)),
 					"display_name":       knownvalue.StringExact("team vault"),
@@ -104,7 +99,7 @@ resource "anthropic_vault" "test" {
   metadata     = { team = "b", owner = "ops" }
 }
 `),
-				ConfigPlanChecks: expectAction(vaultAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(vaultAddr, plancheck.ResourceActionUpdate),
 				// The update, then the metadata patch: two ticks.
 				ConfigStateChecks: expect(vaultAddr, map[string]knownvalue.Check{
 					"display_name": knownvalue.StringExact("renamed vault"),
@@ -116,7 +111,7 @@ resource "anthropic_vault" "test" {
 			{
 				// Removing metadata deletes every key.
 				Config:            vaultConfig(""),
-				ConfigPlanChecks:  expectAction(vaultAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(vaultAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(vaultAddr, map[string]knownvalue.Check{"metadata": knownvalue.Null()}),
 			},
 		},
@@ -149,7 +144,7 @@ func TestVaultResource_archiveOnDestroy(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            cfg,
-				ConfigPlanChecks:  expectAction(vaultAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(vaultAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(vaultAddr, map[string]knownvalue.Check{"archive_on_destroy": knownvalue.Bool(true), "metadata": knownvalue.Null()}),
 			},
 			{
@@ -188,7 +183,7 @@ func TestVaultResource_emptyMetadata(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            vaultConfig("  metadata = {}\n"),
-				ConfigPlanChecks:  expectAction(vaultAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(vaultAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(vaultAddr, map[string]knownvalue.Check{"metadata": knownvalue.MapExact(map[string]knownvalue.Check{})}),
 			},
 		},
@@ -223,7 +218,7 @@ resource "anthropic_vault" "archived" {
 					}
 				},
 				Config:            cfg,
-				ConfigPlanChecks:  expectAction(vaultAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(vaultAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(vaultAddr, map[string]knownvalue.Check{"id": knownvalue.StringExact(vaultID(3))}),
 			},
 			{

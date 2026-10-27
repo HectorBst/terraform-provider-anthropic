@@ -66,13 +66,6 @@ func expectServiceAccount(addr, id, name string, description any, role, createdA
 	}
 }
 
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
-}
-
 // checkAllArchived is a CheckDestroy: there is no hard delete, so every
 // service account left in the fake must be archived.
 func (f *serviceAccountsFake) checkAllArchived(*terraform.State) error {
@@ -109,7 +102,7 @@ func TestServiceAccountResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            serviceAccountConfig("ci-deploy", "  description = \"Deploys the app\"\n"),
-				ConfigPlanChecks:  expectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectServiceAccount(serviceAccountAddr, serviceAccountID(1), "ci-deploy", "Deploys the app", "developer", at(1), at(1)),
 			},
 			{
@@ -120,17 +113,17 @@ func TestServiceAccountResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            serviceAccountConfig("ci-deploy", "  description = \"Deploys every app\"\n  organization_role = \"admin\"\n"),
-				ConfigPlanChecks:  expectAction(serviceAccountAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectServiceAccount(serviceAccountAddr, serviceAccountID(1), "ci-deploy", "Deploys every app", "admin", at(1), at(2)),
 			},
 			{
 				Config:            serviceAccountConfig("ci-deploy", "  organization_role = \"admin\"\n"),
-				ConfigPlanChecks:  expectAction(serviceAccountAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectServiceAccount(serviceAccountAddr, serviceAccountID(1), "ci-deploy", nil, "admin", at(1), at(3)),
 			},
 			{
 				Config:            serviceAccountConfig("ci-deploy-v2", "  organization_role = \"admin\"\n"),
-				ConfigPlanChecks:  expectAction(serviceAccountAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectServiceAccount(serviceAccountAddr, serviceAccountID(2), "ci-deploy-v2", nil, "admin", at(5), at(5)),
 			},
 		},
@@ -169,12 +162,12 @@ func TestServiceAccountResource_defaults(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            serviceAccountConfig("bare", ""),
-				ConfigPlanChecks:  expectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectServiceAccount(serviceAccountAddr, serviceAccountID(1), "bare", nil, "developer", at(1), at(1)),
 			},
 			{
 				Config:            serviceAccountConfig("bare", "  description = \"\"\n"),
-				ConfigPlanChecks:  expectAction(serviceAccountAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectServiceAccount(serviceAccountAddr, serviceAccountID(1), "bare", "", "developer", at(1), at(2)),
 			},
 		},
@@ -196,7 +189,7 @@ func TestServiceAccountResource_removedOutsideTerraform(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(serviceAccountAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig: func() {
 					if !srv.accounts.Delete(serviceAccountID(1)) {
@@ -204,13 +197,13 @@ func TestServiceAccountResource_removedOutsideTerraform(t *testing.T) {
 					}
 				},
 				Config:            config,
-				ConfigPlanChecks:  expectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectServiceAccount(serviceAccountAddr, serviceAccountID(2), "gone", nil, "developer", at(2), at(2)),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeArchiveServiceAccount, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AuthToken),
-				ConfigPlanChecks: expectAction(serviceAccountAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -240,7 +233,7 @@ func TestServiceAccountResource_apiErrors(t *testing.T) {
 			},
 			{
 				Config:           serviceAccountConfig("errors", ""),
-				ConfigPlanChecks: expectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(serviceAccountAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetServiceAccount, http.StatusForbidden, 1) },

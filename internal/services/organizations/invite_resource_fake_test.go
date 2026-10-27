@@ -70,7 +70,7 @@ func TestInviteResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            inviteConfig("jane@example.com", "developer"),
-				ConfigPlanChecks:  expectAction(inviteAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(inviteAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectInvite(1, "jane@example.com", "developer"),
 			},
 			{
@@ -81,12 +81,12 @@ func TestInviteResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            inviteConfig("jane@example.com", "user"),
-				ConfigPlanChecks:  expectAction(inviteAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(inviteAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectInvite(2, "jane@example.com", "user"),
 			},
 			{
 				Config:            inviteConfig("john@example.com", "user"),
-				ConfigPlanChecks:  expectAction(inviteAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(inviteAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectInvite(3, "john@example.com", "user"),
 			},
 		},
@@ -130,23 +130,23 @@ func TestInviteResource_completedOrGone(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             srv.checkNoPendingInvite,
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(inviteAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(inviteAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.setInviteStatus(t, inviteID(1), "accepted") },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(inviteAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(inviteAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: status(1, "accepted"),
 			},
 			{
 				PreConfig:         func() { srv.invites.Delete(inviteID(1)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(inviteAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(inviteAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectInvite(2, "jane@example.com", "developer"),
 			},
 			{
 				PreConfig:         func() { srv.setInviteStatus(t, inviteID(2), "expired") },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(inviteAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(inviteAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: status(2, "expired"),
 			},
 		},
@@ -165,11 +165,11 @@ func TestInviteResource_deleteNotFound(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: inviteConfig("jane@example.com", "developer"), ConfigPlanChecks: expectAction(inviteAddr, plancheck.ResourceActionCreate)},
+			{Config: inviteConfig("jane@example.com", "developer"), ConfigPlanChecks: providertest.ExpectAction(inviteAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:        func() { srv.FailNext(routeDeleteInvite, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AdminKey),
-				ConfigPlanChecks: expectAction(inviteAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(inviteAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -193,7 +193,7 @@ func TestInviteResource_apiErrors(t *testing.T) {
 				Config:      config,
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+create\s+invite:\s+API\s+error\s+\(400\s+invalid_request_error\)`),
 			},
-			{Config: config, ConfigPlanChecks: expectAction(inviteAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(inviteAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetInvite, http.StatusForbidden, 1) },
 				Config:      config,

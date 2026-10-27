@@ -4,7 +4,6 @@
 package externalkeys_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
@@ -85,7 +85,7 @@ func (f *keysFake) key(id string) map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if i := f.index(id); i >= 0 {
-		return copyJSON(f.keys[i])
+		return sdktest.DeepCopy(f.keys[i])
 	}
 	return nil
 }
@@ -130,9 +130,8 @@ func providerConfig(v any) (map[string]any, bool) {
 // create applies Create External Key: provider_config required,
 // display_name (1 to 255) optional, geo defaulting to the only one, "us".
 func (f *keysFake) create(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	if json.NewDecoder(r.Body).Decode(&body) != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not JSON")
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	pc, ok := providerConfig(body["provider_config"])
@@ -163,9 +162,8 @@ func (f *keysFake) get(w http.ResponseWriter, r *http.Request) {
 // display_name clears it), the others stay. Once attached, "the provider
 // fields become effectively immutable": geo and provider_config are refused.
 func (f *keysFake) update(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	if json.NewDecoder(r.Body).Decode(&body) != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not JSON")
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	f.mu.Lock()
@@ -219,42 +217,21 @@ func (f *keysFake) list(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	items := make([]map[string]any, len(f.keys))
 	for i, k := range f.keys {
-		items[i] = copyJSON(k)
+		items[i] = sdktest.DeepCopy(k)
 	}
 	f.mu.Unlock()
 	f.Paginate(w, r, sdktest.PageToken, f.pageSize, items)
 }
 
-func copyJSON(o map[string]any) map[string]any {
-	b, _ := json.Marshal(o)
-	var out map[string]any
-	_ = json.Unmarshal(b, &out)
-	return out
-}
-
 // expectAction checks the planned action on the external key resource, then
 // an empty plan after the apply and refresh.
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(keyAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(keyAddr, action)
 }
 
 // assertRequests checks that every route the fake received carried the
 // Admin key alone and no beta header.
 func (f *keysFake) assertRequests(t *testing.T) {
 	t.Helper()
-	n := 0
-	for _, route := range allRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		n++
-		f.AssertCredential(route, sdktest.AdminKey)
-		f.AssertNoBeta(route)
-	}
-	if n == 0 {
-		t.Fatal("the fake received no request")
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AdminKey}, allRoutes...)
 }

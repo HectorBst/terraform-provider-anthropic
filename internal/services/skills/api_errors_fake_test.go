@@ -31,7 +31,7 @@ func TestSkillResource_apiErrors(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             func(*terraform.State) error { return srv.checkEmpty() },
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(skillAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(skillAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetSkill, http.StatusForbidden, 1) },
 				Config:      config,
@@ -66,7 +66,7 @@ func TestSkillVersionResource_apiErrors(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             func(*terraform.State) error { return srv.checkEmpty() },
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(versionAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetVersion, http.StatusForbidden, 1) },
 				Config:      config,

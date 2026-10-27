@@ -71,10 +71,7 @@ resource "anthropic_deployment" "test" {
   paused         = true
 }
 `,
-			ConfigPlanChecks: resource.ConfigPlanChecks{
-				PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, plancheck.ResourceActionCreate)},
-				PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-			},
+			ConfigPlanChecks: providertest.ExpectAction(addr, plancheck.ResourceActionCreate),
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("paused"), knownvalue.Bool(true)),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("status"), knownvalue.StringExact("paused")),

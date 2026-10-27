@@ -69,7 +69,7 @@ func TestServiceAccountWorkspaceResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            membershipConfig(sa, "wrkspc_01", "workspace_developer"),
-				ConfigPlanChecks:  expectAction(membershipAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMembership(sa, "wrkspc_01", "workspace_developer"),
 			},
 			{
@@ -81,12 +81,12 @@ func TestServiceAccountWorkspaceResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            membershipConfig(sa, "wrkspc_01", "workspace_admin"),
-				ConfigPlanChecks:  expectAction(membershipAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(membershipAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectMembership(sa, "wrkspc_01", "workspace_admin"),
 			},
 			{
 				Config:            membershipConfig(sa, "wrkspc_02", "workspace_admin"),
-				ConfigPlanChecks:  expectAction(membershipAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(membershipAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectMembership(sa, "wrkspc_02", "workspace_admin"),
 			},
 		},
@@ -124,7 +124,7 @@ func TestServiceAccountWorkspaceResource_foundOnLaterPage(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{{
 			Config:            membershipConfig(sa, "wrkspc_03", "workspace_restricted_developer"),
-			ConfigPlanChecks:  expectAction(membershipAddr, plancheck.ResourceActionCreate),
+			ConfigPlanChecks:  providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate),
 			ConfigStateChecks: expectMembership(sa, "wrkspc_03", "workspace_restricted_developer"),
 		}},
 	})
@@ -150,7 +150,7 @@ func TestServiceAccountWorkspaceResource_removedOutsideTerraform(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(membershipAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig: func() {
 					if !srv.memberships.Delete(sa + ":wrkspc_01") {
@@ -158,13 +158,13 @@ func TestServiceAccountWorkspaceResource_removedOutsideTerraform(t *testing.T) {
 					}
 				},
 				Config:            config,
-				ConfigPlanChecks:  expectAction(membershipAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMembership(sa, "wrkspc_01", "workspace_user"),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeRemoveMembership, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AuthToken),
-				ConfigPlanChecks: expectAction(membershipAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(membershipAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -191,13 +191,13 @@ func TestServiceAccountWorkspaceResource_defaultWorkspaceRevertsToImplicit(t *te
 		Steps: []resource.TestStep{
 			{
 				Config:            config,
-				ConfigPlanChecks:  expectAction(membershipAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMembership(sa, defaultWorkspaceID, "workspace_admin"),
 			},
 			{
 				PreConfig:         func() { srv.memberships.Delete(sa + ":" + defaultWorkspaceID) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(membershipAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMembership(sa, defaultWorkspaceID, "workspace_admin"),
 			},
 		},
@@ -218,7 +218,7 @@ func TestServiceAccountWorkspaceResource_serviceAccountGone(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(membershipAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.accounts.Delete(sa) },
 				Config:      config,
@@ -252,7 +252,7 @@ func TestServiceAccountWorkspaceResource_apiErrors(t *testing.T) {
 			},
 			{
 				Config:           membershipConfig(sa, "wrkspc_01", "workspace_user"),
-				ConfigPlanChecks: expectAction(membershipAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(membershipAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig:   func() { srv.FailNext(routeListMemberships, http.StatusForbidden, 1) },

@@ -4,7 +4,6 @@
 package apikeys_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -14,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
@@ -74,9 +74,8 @@ func (f *keysFake) update(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "api key not found")
 		return
 	}
-	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not JSON")
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	for field, v := range body {
@@ -202,24 +201,11 @@ func keyChecks(n, shape int, name, status string) map[string]knownvalue.Check {
 // the Admin key alone and no anthropic-beta header (the endpoints are GA).
 func (f *keysFake) assertAdminRequests(t *testing.T) {
 	t.Helper()
-	routes := map[string]bool{}
-	for _, r := range f.Requests("") {
-		routes[r.Route] = true
-	}
-	if len(routes) == 0 {
-		t.Fatal("the fake received no request")
-	}
-	for route := range routes {
-		f.AssertCredential(route, sdktest.AdminKey)
-		f.AssertNoBeta(route)
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AdminKey})
 }
 
 // expectKeyAction checks the planned action on the API key resource, then
 // an empty plan after the apply and refresh.
 func expectKeyAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(keyAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(keyAddr, action)
 }

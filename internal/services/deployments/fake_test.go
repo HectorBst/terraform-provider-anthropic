@@ -4,7 +4,6 @@
 package deployments_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -79,9 +78,8 @@ func newDeploymentsFake(t *testing.T, pageSize int) *deploymentsFake {
 // schedule, no budget. A schedule comes back with its type and computed
 // upcoming runs.
 func (f *deploymentsFake) create(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	obj := map[string]any{
@@ -104,9 +102,8 @@ func (f *deploymentsFake) update(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "deployment "+id+" not found")
 		return
 	}
-	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", err.Error())
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	if body["description"] == "" {
@@ -150,12 +147,7 @@ func (f *deploymentsFake) setStatus(status string, reason any) http.HandlerFunc 
 // assertRequestShape checks the managed-agents beta and the standard key on
 // every route called.
 func (f *deploymentsFake) assertRequestShape() {
-	for _, route := range allDeploymentRoutes {
-		if len(f.Requests(route)) > 0 {
-			f.AssertBeta(route, managedAgentsBeta)
-			f.AssertCredential(route, sdktest.APIKey)
-		}
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.APIKey, Beta: managedAgentsBeta}, allDeploymentRoutes...)
 }
 
 // checkArchived is a CheckDestroy: every deployment of the fake is archived,

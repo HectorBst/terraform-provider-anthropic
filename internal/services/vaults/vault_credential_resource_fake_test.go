@@ -16,6 +16,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 )
 
 const credentialAddr = "anthropic_vault_credential.test"
@@ -80,7 +82,7 @@ func TestVaultCredentialResource_staticBearer(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           credentialConfig(bearer("bearer-v1", 1, named)),
-				ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{
 					"id":                 knownvalue.StringExact(credentialID(1)),
 					"vault_id":           knownvalue.StringExact(vaultID(1)),
@@ -105,17 +107,17 @@ func TestVaultCredentialResource_staticBearer(t *testing.T) {
 			importCredential(credentialConfig(bearer("bearer-v1", 1, named))),
 			{
 				Config:            credentialConfig(bearer("bearer-v1", 1, renamed)),
-				ConfigPlanChecks:  expectAction(credentialAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(credentialAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{"display_name": knownvalue.StringExact("bearer renamed"), "metadata": stringMap(map[string]string{"team": "b"})}),
 			},
 			{
 				Config:            credentialConfig(bearer("bearer-v2", 2, renamed)),
-				ConfigPlanChecks:  expectAction(credentialAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(credentialAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{"token_wo_version": knownvalue.Int64Exact(2), "token": knownvalue.Null()}),
 			},
 			{
 				Config:            credentialConfig(bearer("bearer-v2", 2, "")),
-				ConfigPlanChecks:  expectAction(credentialAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(credentialAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{"display_name": knownvalue.Null(), "metadata": knownvalue.Null()}),
 			},
 		},
@@ -143,7 +145,7 @@ func TestVaultCredentialResource_bareHostURL(t *testing.T) {
 		CheckDestroy:             srv.checkCredentialsGone,
 		Steps: []resource.TestStep{{
 			Config:            credentialConfig(strings.Replace(bearer("bearer-v1", 1, ""), "https://mcp.example.com/mcp", "https://mcp.example.com", 1)),
-			ConfigPlanChecks:  expectAction(credentialAddr, plancheck.ResourceActionCreate),
+			ConfigPlanChecks:  providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 			ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{"mcp_server_url": knownvalue.StringExact("https://mcp.example.com")}),
 			Check: func(*terraform.State) error {
 				if o, _ := srv.credentials.Get(credentialID(1)); o["auth"].(map[string]any)["mcp_server_url"] != "https://mcp.example.com/" {
@@ -206,7 +208,7 @@ func TestVaultCredentialResource_mcpOAuth(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           credentialConfig(v1),
-				ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{
 					"type":           knownvalue.StringExact("mcp_oauth"),
 					"mcp_server_url": knownvalue.StringExact("https://mcp.example.com/sse"),
@@ -221,7 +223,7 @@ func TestVaultCredentialResource_mcpOAuth(t *testing.T) {
 			importCredential(credentialConfig(v1)),
 			{
 				Config:           credentialConfig(v2),
-				ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{
 					"expires_at": knownvalue.StringExact("2027-06-01T00:00:00Z"),
 					"refresh":    refresh("read write"),
@@ -274,14 +276,14 @@ func TestVaultCredentialResource_mcpOAuthEndpointAuth(t *testing.T) {
 				Steps: []resource.TestStep{
 					{
 						Config:           credentialConfig(oauth(1, "", refreshBlock(1, tc.tea(1), ""))),
-						ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionCreate),
+						ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 						ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{
 							"expires_at": knownvalue.Null(),
 						}),
 					},
 					{
 						Config:           credentialConfig(oauth(2, "", refreshBlock(2, tc.tea(2), ""))),
-						ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionUpdate),
+						ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionUpdate),
 					},
 				},
 			})
@@ -323,7 +325,7 @@ func TestVaultCredentialResource_environmentVariable(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           credentialConfig(limited),
-				ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{
 					"type":         knownvalue.StringExact("environment_variable"),
 					"secret_name":  knownvalue.StringExact("API_KEY"),
@@ -340,7 +342,7 @@ func TestVaultCredentialResource_environmentVariable(t *testing.T) {
 			importCredential(credentialConfig(limited)),
 			{
 				Config:           credentialConfig(headerOnly),
-				ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{
 					"networking":         knownvalue.ObjectExact(map[string]knownvalue.Check{"mode": knownvalue.StringExact("unrestricted"), "allowed_hosts": knownvalue.Null()}),
 					"injection_location": location(true, false),
@@ -372,7 +374,7 @@ func TestVaultCredentialResource_defaultInjectionLocation(t *testing.T) {
 		CheckDestroy:             srv.checkCredentialsGone,
 		Steps: []resource.TestStep{{
 			Config:           credentialConfig(envVar("  networking = { mode = \"unrestricted\" }\n")),
-			ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionCreate),
+			ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 			ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{
 				"injection_location": knownvalue.ObjectExact(map[string]knownvalue.Check{"header": knownvalue.Bool(true), "body": knownvalue.Bool(true)}),
 			}),
@@ -396,13 +398,13 @@ func TestVaultCredentialResource_archiveAndGone(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            archived,
-				ConfigPlanChecks:  expectAction(credentialAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{"archive_on_destroy": knownvalue.Bool(true)}),
 			},
 			{
 				PreConfig:         func() { srv.credentials.Delete(credentialID(1)) },
 				Config:            archived,
-				ConfigPlanChecks:  expectAction(credentialAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{"id": knownvalue.StringExact(credentialID(2))}),
 			},
 			{
@@ -540,11 +542,11 @@ func TestVaultCredentialResource_scopeRemoved(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           credentialConfig(oauth(1, "", refreshBlock(1, none, "    scope          = \"read\"\n"))),
-				ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				Config:           credentialConfig(oauth(1, "", refreshBlock(1, none, ""))),
-				ConfigPlanChecks: expectAction(credentialAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(credentialAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(credentialAddr, tfjsonpath.New("refresh").AtMapKey("scope"), knownvalue.Null()),
 				},
@@ -568,7 +570,7 @@ func TestVaultCredentialResource_emptyMetadata(t *testing.T) {
 		CheckDestroy:             srv.checkCredentialsGone,
 		Steps: []resource.TestStep{{
 			Config:            credentialConfig(bearer("bearer-v1", 1, "  metadata = {}\n")),
-			ConfigPlanChecks:  expectAction(credentialAddr, plancheck.ResourceActionCreate),
+			ConfigPlanChecks:  providertest.ExpectAction(credentialAddr, plancheck.ResourceActionCreate),
 			ConfigStateChecks: expect(credentialAddr, map[string]knownvalue.Check{"metadata": knownvalue.MapExact(map[string]knownvalue.Check{})}),
 		}},
 	})

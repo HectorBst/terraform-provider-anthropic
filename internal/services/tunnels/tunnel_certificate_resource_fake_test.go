@@ -92,7 +92,7 @@ func TestTunnelCertificateResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            certConfig(ca1),
-				ConfigPlanChecks:  expectAction(certAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(certAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectCert(t, 1, ca1, fp1, at(1)),
 			},
 			{
@@ -105,12 +105,12 @@ func TestTunnelCertificateResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            certConfig(rewrap(ca1)),
-				ConfigPlanChecks:  expectAction(certAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(certAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectCert(t, 1, rewrap(ca1), fp1, at(1)),
 			},
 			{
 				Config:            certConfig(ca2),
-				ConfigPlanChecks:  expectAction(certAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(certAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectCert(t, 2, ca2, fp2, at(3)),
 			},
 		},
@@ -141,21 +141,21 @@ func TestTunnelCertificateResource_goneOutsideTerraform(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(certAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(certAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:        func() { srv.certs.Archive(certID(1)) },
 				Config:           config,
-				ConfigPlanChecks: expectAction(certAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(certAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig:        func() { srv.certs.Delete(certID(2)) },
 				Config:           config,
-				ConfigPlanChecks: expectAction(certAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(certAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig:        func() { srv.FailNext(routeArchiveCert, http.StatusNotFound, 1) },
 				Config:           tunnelConfig(""),
-				ConfigPlanChecks: expectAction(certAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(certAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -202,7 +202,7 @@ func TestTunnelCertificateResource_errors(t *testing.T) {
 			{
 				PreConfig:        func() { srv.certs.Archive(certID(1)) },
 				Config:           certConfig(ca),
-				ConfigPlanChecks: expectAction(certAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(certAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetCert, http.StatusForbidden, 1) },

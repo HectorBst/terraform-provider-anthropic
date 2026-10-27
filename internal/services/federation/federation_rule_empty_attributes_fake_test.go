@@ -76,11 +76,8 @@ resource "anthropic_federation_rule" "test" {
 	}
 	step := func(config string, action plancheck.ResourceActionType, attributes knownvalue.Check) resource.TestStep {
 		return resource.TestStep{
-			Config: config,
-			ConfigPlanChecks: resource.ConfigPlanChecks{
-				PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-				PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-			},
+			Config:            config,
+			ConfigPlanChecks:  providertest.ExpectAction(addr, action),
 			ConfigStateChecks: []statecheck.StateCheck{statecheck.ExpectKnownValue(addr, tfjsonpath.New("attributes"), attributes)},
 		}
 	}

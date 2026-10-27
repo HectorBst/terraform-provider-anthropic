@@ -16,6 +16,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 )
 
 const deploymentAddr = "anthropic_deployment.test"
@@ -51,10 +53,7 @@ func eventsJSON(text string) string {
 }
 
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(deploymentAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(deploymentAddr, action)
 }
 
 // expect checks attributes of the deployment in state.

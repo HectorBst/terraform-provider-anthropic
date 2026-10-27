@@ -12,9 +12,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
-	"github.com/hashicorp/terraform-plugin-testing/plancheck"
-
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
@@ -48,7 +45,7 @@ func newRBACFake(t *testing.T, pageSize int) *rbacFake {
 	t.Helper()
 	f := &rbacFake{Server: sdktest.NewServer(t), pageSize: pageSize}
 	f.Handle(routeCreateGroup, f.createGroup)
-	f.Handle(routeListGroups, func(w http.ResponseWriter, r *http.Request) { f.page(w, r, f.snapshot(&f.groups, nil), "") })
+	f.Handle(routeListGroups, func(w http.ResponseWriter, r *http.Request) { f.page(w, r, f.snapshot(&f.groups, nil), "id") })
 	f.Handle(routeGetGroup, f.getGroup)
 	f.Handle(routeUpdateGroup, f.updateGroup)
 	f.Handle(routeDeleteGroup, f.deleteGroup)
@@ -105,7 +102,7 @@ func (f *rbacFake) snapshot(list *[]map[string]any, keep func(map[string]any) bo
 	var out []map[string]any
 	for _, it := range *list {
 		if keep == nil || keep(it) {
-			out = append(out, copyJSON(it))
+			out = append(out, sdktest.DeepCopy(it))
 		}
 	}
 	return out
@@ -121,7 +118,7 @@ func (f *rbacFake) group(id string) map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if i := find(f.groups, id); i >= 0 {
-		return copyJSON(f.groups[i])
+		return sdktest.DeepCopy(f.groups[i])
 	}
 	return nil
 }
@@ -263,63 +260,24 @@ func (f *rbacFake) removeMember(w http.ResponseWriter, r *http.Request) {
 }
 
 // page answers one page of items with the kit's paginator (page/next_page,
-// cursor checks) plus the has_more every RBAC list sends next to next_page.
-// idField names the field that serves as cursor ID ("" for "id"); the "id"
-// the kit needs is not part of the answered objects then.
-func (f *rbacFake) page(w http.ResponseWriter, r *http.Request, items []map[string]any, idField string) {
-	if idField != "" {
-		for _, it := range items {
-			it["id"] = it[idField]
-		}
-	}
+// cursor checks), the cursors naming the field key, plus the has_more every
+// RBAC list sends next to next_page, which rbac.go stops on.
+func (f *rbacFake) page(w http.ResponseWriter, r *http.Request, items []map[string]any, key string) {
 	rec := httptest.NewRecorder()
-	f.Paginate(rec, r, sdktest.PageToken, f.pageSize, items)
+	f.PaginateBy(rec, r, sdktest.PageToken, f.pageSize, items, func(it map[string]any) string { return fmt.Sprint(it[key]) })
 	var page map[string]any
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &page) != nil {
 		w.WriteHeader(rec.Code)
 		_, _ = w.Write(rec.Body.Bytes())
 		return
 	}
-	if idField != "" {
-		for _, it := range page["data"].([]any) {
-			delete(it.(map[string]any), "id")
-		}
-	}
 	page["has_more"] = page["next_page"] != nil
 	sdktest.WriteJSON(w, http.StatusOK, page)
-}
-
-func copyJSON(o map[string]any) map[string]any {
-	b, _ := json.Marshal(o)
-	var out map[string]any
-	_ = json.Unmarshal(b, &out)
-	return out
-}
-
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
 }
 
 // assertRBACRequests checks that every request the fake received carried
 // the Admin key alone, no anthropic-beta header, and ?beta=true.
 func (f *rbacFake) assertRBACRequests(t *testing.T) {
 	t.Helper()
-	reqs := f.Requests("")
-	if len(reqs) == 0 {
-		t.Fatal("the fake received no request")
-	}
-	routes := map[string]bool{}
-	for _, r := range reqs {
-		routes[r.Route] = true
-		if r.Query.Get("beta") != "true" {
-			t.Errorf("%s %s?%s: want beta=true", r.Method, r.Path, r.Query.Encode())
-		}
-	}
-	for route := range routes {
-		f.AssertCredential(route, sdktest.AdminKey)
-		f.AssertNoBeta(route)
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AdminKey, BetaQuery: true})
 }

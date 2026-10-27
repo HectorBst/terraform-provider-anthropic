@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 )
 
 const ruleWorkspaceAddr = "anthropic_federation_rule_workspace.test"
@@ -43,7 +45,7 @@ func TestFederationRuleWorkspaceResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           ruleWorkspaceConfig("wrkspc_a"),
-				ConfigPlanChecks: expectAction(ruleWorkspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(ruleWorkspaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(ruleWorkspaceAddr, map[string]knownvalue.Check{
 					"id": knownvalue.StringExact("fdrl_seeded:wrkspc_a"), "federation_rule_id": knownvalue.StringExact("fdrl_seeded"),
 					"workspace_id": knownvalue.StringExact("wrkspc_a"), "workspace_name": knownvalue.StringExact("alpha"),
@@ -59,7 +61,7 @@ func TestFederationRuleWorkspaceResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            ruleWorkspaceConfig("wrkspc_b"),
-				ConfigPlanChecks:  expectAction(ruleWorkspaceAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(ruleWorkspaceAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expect(ruleWorkspaceAddr, map[string]knownvalue.Check{"workspace_name": knownvalue.StringExact("beta")}),
 			},
 		},
@@ -94,7 +96,7 @@ func TestFederationRuleWorkspaceResource_goneOutOfBand(t *testing.T) {
 			{
 				PreConfig:        func() { srv.workspaces.Delete("fdrl_seeded:wrkspc_a") },
 				Config:           cfg,
-				ConfigPlanChecks: expectAction(ruleWorkspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(ruleWorkspaceAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				PreConfig: func() {

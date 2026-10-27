@@ -8,14 +8,10 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
-	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
@@ -128,7 +124,7 @@ func (f *wsFake) workspace(id string) map[string]any {
 func (f *wsFake) getWS(id string) map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return copyJSON(f.workspace(id))
+	return sdktest.DeepCopy(f.workspace(id))
 }
 
 func (f *wsFake) deleteWS(id string) {
@@ -143,20 +139,10 @@ func (f *wsFake) setArchived(id string) {
 	f.workspace(id)["archived_at"] = "2026-05-01T00:00:00Z"
 }
 
-// decode reads a JSON object body, or answers 400.
-func decode(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not a JSON object")
-		return nil, false
-	}
-	return body, true
-}
-
 // createWorkspace applies Create Workspace: name required (1..255), the
 // data_residency, tags and external_key_id of the body over the defaults.
 func (f *wsFake) createWorkspace(w http.ResponseWriter, r *http.Request) {
-	body, ok := decode(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -199,7 +185,7 @@ func (f *wsFake) getWorkspace(w http.ResponseWriter, r *http.Request) {
 // write-once ("once a key is attached to a Workspace it cannot be detached
 // or replaced").
 func (f *wsFake) updateWorkspace(w http.ResponseWriter, r *http.Request) {
-	body, ok := decode(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -265,7 +251,7 @@ func (f *wsFake) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 		if (ws["archived_at"] != nil && q.Get("include_archived") != "true") || (ws["id"] == f.defaultID && q.Get("include_default") != "true") {
 			continue
 		}
-		items = append(items, copyJSON(ws))
+		items = append(items, sdktest.DeepCopy(ws))
 	}
 	f.mu.Unlock()
 	f.Paginate(w, r, sdktest.AfterID, f.pageSize, items)
@@ -311,7 +297,7 @@ func (f *wsFake) dropMember(workspaceID, userID string) {
 // addMember applies Create Workspace Member: workspace_role "Cannot be
 // workspace_billing".
 func (f *wsFake) addMember(w http.ResponseWriter, r *http.Request) {
-	body, ok := decode(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -345,7 +331,7 @@ func (f *wsFake) getMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *wsFake) updateMember(w http.ResponseWriter, r *http.Request) {
-	body, ok := decode(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -382,68 +368,18 @@ func (f *wsFake) listMembers(w http.ResponseWriter, r *http.Request) {
 	var items []map[string]any
 	for _, m := range f.members {
 		if m["workspace_id"] == r.PathValue("workspace_id") {
-			items = append(items, copyJSON(m))
+			items = append(items, sdktest.DeepCopy(m))
 		}
 	}
 	f.mu.Unlock()
-	f.paginateBy(w, r, sdktest.AfterID, "user_id", items)
-}
-
-// paginateBy serves items with the kit's paginator and its cursor checks,
-// using field as the cursor ID of objects that have no "id"; the "id" the
-// kit needs is removed from the answer.
-func (f *wsFake) paginateBy(w http.ResponseWriter, r *http.Request, family sdktest.Family, field string, items []map[string]any) {
-	withID := make([]map[string]any, len(items))
-	for i, it := range items {
-		withID[i] = copyJSON(it)
-		withID[i]["id"] = it[field]
-	}
-	rec := httptest.NewRecorder()
-	f.Paginate(rec, r, family, f.pageSize, withID)
-	var page map[string]any
-	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &page) != nil {
-		w.WriteHeader(rec.Code)
-		_, _ = w.Write(rec.Body.Bytes())
-		return
-	}
-	for _, it := range page["data"].([]any) {
-		delete(it.(map[string]any), "id")
-	}
-	sdktest.WriteJSON(w, http.StatusOK, page)
-}
-
-func copyJSON(o map[string]any) map[string]any {
-	if o == nil {
-		return nil
-	}
-	b, _ := json.Marshal(o)
-	var out map[string]any
-	_ = json.Unmarshal(b, &out)
-	return out
-}
-
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	f.PaginateBy(w, r, sdktest.AfterID, f.pageSize, items, func(m map[string]any) string { return fmt.Sprint(m["user_id"]) })
 }
 
 // assertAdminRequests checks that every request the fake received carried
 // the Admin key alone and no anthropic-beta header (the endpoints are GA).
 func (f *wsFake) assertAdminRequests(t *testing.T) {
 	t.Helper()
-	routes := map[string]bool{}
-	for _, r := range f.Requests("") {
-		routes[r.Route] = true
-	}
-	if len(routes) == 0 {
-		t.Fatal("the fake received no request")
-	}
-	for route := range routes {
-		f.AssertCredential(route, sdktest.AdminKey)
-		f.AssertNoBeta(route)
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AdminKey})
 }
 
 // paths returns the path of every request to route, with its fault.
@@ -579,7 +515,7 @@ func (f *wsFake) listWorkspaceLimits(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Unlock()
-	f.paginateBy(w, r, sdktest.PageToken, "rate_limit_id", items)
+	f.PaginateBy(w, r, sdktest.PageToken, f.pageSize, items, func(l map[string]any) string { return fmt.Sprint(l["rate_limit_id"]) })
 }
 
 // workspaceRateLimitTypes is the enum of WorkspaceRateLimitType.

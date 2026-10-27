@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
@@ -62,7 +63,7 @@ func (f *limitsFake) limit(id string) map[string]any {
 	defer f.mu.Unlock()
 	for _, l := range f.limits {
 		if l["id"] == id {
-			return copyJSON(l)
+			return sdktest.DeepCopy(l)
 		}
 	}
 	return nil
@@ -84,9 +85,8 @@ func sameScope(a, b any) bool {
 // period defaults to monthly; user, organization or workspace scopes only
 // ("Any other combination returns 400").
 func (f *limitsFake) set(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	if json.NewDecoder(r.Body).Decode(&body) != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not JSON")
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	scope, _ := body["scope"].(map[string]any)
@@ -133,20 +133,10 @@ func (f *limitsFake) delete(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "type": "spend_limit_deleted"})
 }
 
-func copyJSON(o map[string]any) map[string]any {
-	b, _ := json.Marshal(o)
-	var out map[string]any
-	_ = json.Unmarshal(b, &out)
-	return out
-}
-
 // expectAction checks the planned action on the spend limit resource, then
 // an empty plan after the apply and refresh.
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(limitAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(limitAddr, action)
 }
 
 // assertRequests checks the credential, ?beta=true and the absence of a

@@ -11,9 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
-	"github.com/hashicorp/terraform-plugin-testing/plancheck"
-
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
@@ -170,22 +167,5 @@ func (f *orgFake) setInviteStatus(t *testing.T, id, status string) {
 // GA; the invites take ?beta=true in the query instead).
 func (f *orgFake) assertAdminRequests(t *testing.T) {
 	t.Helper()
-	routes := map[string]bool{}
-	for _, r := range f.Requests("") {
-		routes[r.Route] = true
-	}
-	if len(routes) == 0 {
-		t.Fatal("the fake received no request")
-	}
-	for route := range routes {
-		f.AssertCredential(route, sdktest.AdminKey)
-		f.AssertNoBeta(route)
-	}
-}
-
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AdminKey})
 }

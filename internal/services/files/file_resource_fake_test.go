@@ -60,10 +60,7 @@ resource "anthropic_file" "test" {
 // expectAction checks the action the step plans for anthropic_file.test and
 // that the refresh after the apply plans nothing.
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(fileAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(fileAddr, action)
 }
 
 type fileState struct {

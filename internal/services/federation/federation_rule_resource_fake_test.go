@@ -15,6 +15,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 )
 
 const ruleAddr = "anthropic_federation_rule.test"
@@ -39,13 +41,6 @@ resource "anthropic_federation_rule" "test" {
   oauth_scope = "workspace:developer"
 ` + body + `}
 `)
-}
-
-func expectAction(addr string, action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
 }
 
 func expect(addr string, values map[string]knownvalue.Check) []statecheck.StateCheck {
@@ -109,7 +104,7 @@ func TestFederationRuleResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           ruleConfig(fullRule),
-				ConfigPlanChecks: expectAction(ruleAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(ruleAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{
 					"id": knownvalue.StringExact(ruleID(1)), "name": knownvalue.StringExact("ci-deploy"),
 					"description": knownvalue.StringExact("Deploys from main."),
@@ -197,12 +192,12 @@ func TestFederationRuleResource_updateKeepsServiceAccountName(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            simpleRule("claims.ref == 'refs/heads/main'", ""),
-				ConfigPlanChecks:  expectAction(ruleAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(ruleAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{"target": target("svac_001", "sa-one")}),
 			},
 			{
 				Config:           simpleRule("claims.ref == 'refs/heads/release'", ""),
-				ConfigPlanChecks: expectAction(ruleAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(ruleAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{
 					"target": target("svac_001", "sa-one"),
 					"match": knownvalue.ObjectExact(map[string]knownvalue.Check{
@@ -230,7 +225,7 @@ func TestFederationRuleResource_updateKeepsServiceAccountNameWhenReadBackFails(t
 			{
 				PreConfig:         func() { srv.failReadAfterRuleUpdate.Store(true) },
 				Config:            simpleRule("claims.ref == 'refs/heads/release'", ""),
-				ConfigPlanChecks:  expectAction(ruleAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(ruleAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{"target": target("svac_001", "sa-one")}),
 				Check: func(*terraform.State) error {
 					srv.failReadAfterRuleUpdate.Store(false)
@@ -266,10 +261,10 @@ func TestFederationRuleResource_workspaceAndAttributes(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories(srv),
 		Steps: []resource.TestStep{
-			{Config: all, ConfigPlanChecks: expectAction(ruleAddr, plancheck.ResourceActionCreate)},
+			{Config: all, ConfigPlanChecks: providertest.ExpectAction(ruleAddr, plancheck.ResourceActionCreate)},
 			{
 				Config:           simpleRule("true", ""),
-				ConfigPlanChecks: expectAction(ruleAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(ruleAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{
 					"applies_to_all_workspaces": knownvalue.Bool(false), "workspace_ids": stringList("wrkspc_a"),
 				}),
@@ -298,7 +293,7 @@ func TestFederationRuleResource_goneOutOfBand(t *testing.T) {
 			{
 				PreConfig:         func() { srv.rules.Delete(ruleID(1)) },
 				Config:            cfg,
-				ConfigPlanChecks:  expectAction(ruleAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(ruleAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{"id": knownvalue.StringExact(ruleID(2))}),
 			},
 			{
@@ -432,12 +427,12 @@ func TestFederationRuleResource_attributes(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            simpleRule("true", "  attributes = {}\n"),
-				ConfigPlanChecks:  expectAction(ruleAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(ruleAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{"attributes": knownvalue.MapExact(map[string]knownvalue.Check{})}),
 			},
 			{
 				Config:            simpleRule("true", ""),
-				ConfigPlanChecks:  expectAction(ruleAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(ruleAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expect(ruleAddr, map[string]knownvalue.Check{"attributes": knownvalue.Null()}),
 			},
 		},

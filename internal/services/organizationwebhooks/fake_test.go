@@ -4,7 +4,6 @@
 package organizationwebhooks_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -15,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
+	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 	"github.com/ippontech/terraform-provider-anthropic/internal/sdktest"
 )
 
@@ -59,21 +59,10 @@ func newWebhooksFake(t *testing.T) *webhooksFake {
 		routeDeleteWebhook: f.delete,
 		routeRegenSecret:   f.regenerate,
 	} {
-		f.Handle(route, f.requireBeta(h))
+		// "exactly as if this API did not exist" without the beta header.
+		f.Handle(route, sdktest.RequireBeta(webhooksBeta, h))
 	}
 	return f
-}
-
-// requireBeta answers 404, "exactly as if this API did not exist", to a
-// request without the anthropic-beta header.
-func (f *webhooksFake) requireBeta(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !slices.Contains(strings.Split(r.Header.Get("Anthropic-Beta"), ","), webhooksBeta) {
-			sdktest.WriteAPIError(w, http.StatusNotFound, "", "Not Found")
-			return
-		}
-		h(w, r)
-	}
 }
 
 func webhookID(n int) string { return fmt.Sprintf("wep_%024d", n) }
@@ -105,7 +94,7 @@ func (f *webhooksFake) endpoint(id string) map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if i := f.index(id); i >= 0 {
-		return copyJSON(f.endpoints[i])
+		return sdktest.DeepCopy(f.endpoints[i])
 	}
 	return nil
 }
@@ -147,9 +136,8 @@ func validEvents(v any) ([]any, bool) {
 // create applies Create: url (HTTPS), enabled_events (at least one), name
 // and description; the answer adds the whsec_ signing_secret.
 func (f *webhooksFake) create(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	if json.NewDecoder(r.Body).Decode(&body) != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not JSON")
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	url, _ := body["url"].(string)
@@ -170,7 +158,7 @@ func (f *webhooksFake) create(w http.ResponseWriter, r *http.Request) {
 	ep := endpointJSON(f.created, url, name, description)
 	ep["enabled_events"] = events
 	f.endpoints = append(f.endpoints, ep)
-	out := copyJSON(ep)
+	out := sdktest.DeepCopy(ep)
 	out["signing_secret"] = fmt.Sprintf("whsec_created%d", f.created)
 	sdktest.WriteJSON(w, http.StatusOK, out)
 }
@@ -193,9 +181,8 @@ func (f *webhooksFake) get(w http.ResponseWriter, r *http.Request) {
 // update applies Update: the fields sent change, the others stay; "An empty
 // list doesn't clear the list"; state enabled clears disabled_reason.
 func (f *webhooksFake) update(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	if json.NewDecoder(r.Body).Decode(&body) != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not JSON")
+	body, ok := f.DecodeBody(w, r)
+	if !ok {
 		return
 	}
 	f.mu.Lock()
@@ -256,36 +243,15 @@ func (f *webhooksFake) regenerate(w http.ResponseWriter, r *http.Request) {
 	sdktest.WriteJSON(w, http.StatusOK, map[string]any{"signing_secret": fmt.Sprintf("whsec_regenerated%d", f.regens)})
 }
 
-func copyJSON(o map[string]any) map[string]any {
-	b, _ := json.Marshal(o)
-	var out map[string]any
-	_ = json.Unmarshal(b, &out)
-	return out
-}
-
 // expectAction checks the planned action on the webhook resource, then an
 // empty plan after the apply and refresh.
 func expectAction(action plancheck.ResourceActionType) resource.ConfigPlanChecks {
-	return resource.ConfigPlanChecks{
-		PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(webhookAddr, action)},
-		PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-	}
+	return providertest.ExpectAction(webhookAddr, action)
 }
 
 // assertRequests checks the credential and the beta header of every route
 // the fake received.
 func (f *webhooksFake) assertRequests(t *testing.T) {
 	t.Helper()
-	n := 0
-	for _, route := range allRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		n++
-		f.AssertCredential(route, sdktest.AdminKey)
-		f.AssertBeta(route, webhooksBeta)
-	}
-	if n == 0 {
-		t.Fatal("the fake received no request")
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AdminKey, Beta: webhooksBeta}, allRoutes...)
 }

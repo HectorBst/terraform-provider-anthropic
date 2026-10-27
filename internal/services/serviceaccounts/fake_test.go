@@ -4,7 +4,6 @@
 package serviceaccounts_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -91,7 +90,7 @@ func (f *serviceAccountsFake) newAccount(name string, description, role any) map
 
 // create: "a duplicate name returns 409" (create reference, name).
 func (f *serviceAccountsFake) create(w http.ResponseWriter, r *http.Request) {
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -126,7 +125,7 @@ func (f *serviceAccountsFake) update(w http.ResponseWriter, r *http.Request) {
 		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "archived service accounts cannot be updated")
 		return
 	}
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -185,7 +184,7 @@ func (f *serviceAccountsFake) addMembership(w http.ResponseWriter, r *http.Reque
 	if !f.liveAccount(w, id) {
 		return
 	}
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -244,7 +243,7 @@ func (f *serviceAccountsFake) updateMembership(w http.ResponseWriter, r *http.Re
 		sdktest.WriteAPIError(w, http.StatusNotFound, "", "no explicit membership of "+id+" in "+workspaceID)
 		return
 	}
-	body, ok := decodeBody(w, r)
+	body, ok := f.DecodeBody(w, r)
 	if !ok {
 		return
 	}
@@ -271,18 +270,7 @@ func (f *serviceAccountsFake) removeMembership(w http.ResponseWriter, r *http.Re
 // called.
 func (f *serviceAccountsFake) assertRequestShape(t *testing.T) {
 	t.Helper()
-	for _, route := range allRoutes {
-		if len(f.Requests(route)) == 0 {
-			continue
-		}
-		f.AssertCredential(route, sdktest.AuthToken)
-		f.AssertNoBeta(route)
-		for _, r := range f.Requests(route) {
-			if r.Query.Get("beta") != "true" {
-				t.Errorf("%s %s without ?beta=true", r.Method, r.Path)
-			}
-		}
-	}
+	f.AssertShape(sdktest.Shape{Credential: sdktest.AuthToken, BetaQuery: true}, allRoutes...)
 }
 
 // requestPaths returns the path and fault of every request to route.
@@ -292,17 +280,4 @@ func (f *serviceAccountsFake) requestPaths(route string) []string {
 		out = append(out, fmt.Sprintf("%s %s", r.Path, r.Fault))
 	}
 	return out
-}
-
-// decodeBody reads a JSON object body, numbers kept as json.Number, or
-// answers 400 invalid_request_error.
-func decodeBody(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	body := map[string]any{}
-	dec := json.NewDecoder(r.Body)
-	dec.UseNumber()
-	if err := dec.Decode(&body); err != nil {
-		sdktest.WriteAPIError(w, http.StatusBadRequest, "", "body is not a JSON object: "+err.Error())
-		return nil, false
-	}
-	return body, true
 }

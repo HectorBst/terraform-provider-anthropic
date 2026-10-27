@@ -83,7 +83,7 @@ func TestRBACGroupResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            groupConfig("Engineering"),
-				ConfigPlanChecks:  expectAction(groupAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(groupAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectGroup(1, "Engineering", "direct", roleIDsCheck(), created),
 			},
 			{
@@ -94,19 +94,19 @@ func TestRBACGroupResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            groupConfig("Platform"),
-				ConfigPlanChecks:  expectAction(groupAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(groupAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectGroup(1, "Platform", "direct", roleIDsCheck(), "2026-08-01T00:00:00Z"),
 			},
 			{
 				PreConfig:         func() { srv.setRoles(groupID(1), []string{"rbac_role_a", "rbac_role_b"}) },
 				Config:            groupConfig("Platform"),
-				ConfigPlanChecks:  expectAction(groupAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(groupAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectGroup(1, "Platform", "direct", roleIDsCheck("rbac_role_a", "rbac_role_b"), "2026-08-01T00:00:00Z"),
 			},
 			{
 				PreConfig:         func() { srv.setRoles(groupID(1), nil) },
 				Config:            groupConfig("Platform"),
-				ConfigPlanChecks:  expectAction(groupAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(groupAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectGroup(1, "Platform", "direct", knownvalue.Null(), "2026-08-01T00:00:00Z"),
 			},
 		},
@@ -129,11 +129,11 @@ func TestRBACGroupResource_removedOutsideTerraform(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             srv.checkNoGroup(groupID(2)),
 		Steps: []resource.TestStep{
-			{Config: groupConfig("Ops"), ConfigPlanChecks: expectAction(groupAddr, plancheck.ResourceActionCreate)},
+			{Config: groupConfig("Ops"), ConfigPlanChecks: providertest.ExpectAction(groupAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.dropGroup(groupID(1)) },
 				Config:            groupConfig("Ops"),
-				ConfigPlanChecks:  expectAction(groupAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(groupAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectGroup(2, "Ops", "direct", roleIDsCheck(), fmt.Sprintf("2026-07-%02dT08:00:00Z", 2)),
 			},
 		},
@@ -150,11 +150,11 @@ func TestRBACGroupResource_deleteNotFound(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: groupConfig("Racing"), ConfigPlanChecks: expectAction(groupAddr, plancheck.ResourceActionCreate)},
+			{Config: groupConfig("Racing"), ConfigPlanChecks: providertest.ExpectAction(groupAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:        func() { srv.FailNext(routeDeleteGroup, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AdminKey),
-				ConfigPlanChecks: expectAction(groupAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(groupAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -180,7 +180,7 @@ func TestRBACGroupResource_scimGroupRename(t *testing.T) {
 			},
 			{
 				Config:            groupConfig("IdP group"),
-				ConfigPlanChecks:  expectAction(groupAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(groupAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectGroup(1, "IdP group", "scim", roleIDsCheck("rbac_role_a"), fmt.Sprintf("2026-07-%02dT08:00:00Z", 1)),
 			},
 			{
@@ -218,7 +218,7 @@ func TestRBACGroupResource_apiErrors(t *testing.T) {
 				Config:      groupConfig("Faulty"),
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+create\s+RBAC\s+group:\s+API\s+error\s+\(403\s+permission_error\)`),
 			},
-			{Config: groupConfig("Faulty"), ConfigPlanChecks: expectAction(groupAddr, plancheck.ResourceActionCreate)},
+			{Config: groupConfig("Faulty"), ConfigPlanChecks: providertest.ExpectAction(groupAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetGroup, http.StatusForbidden, 1) },
 				Config:      groupConfig("Faulty"),

@@ -96,7 +96,7 @@ func TestWorkspaceResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            workspaceConfig("  name = \"Team\"\n"),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectWorkspace(1, "Team", defaultResidency, tagsCheck(nil), knownvalue.Null()),
 			},
 			{
@@ -107,7 +107,7 @@ func TestWorkspaceResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            workspaceConfig("  name = \"Team (renamed)\"\n"),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectWorkspace(1, "Team (renamed)", defaultResidency, tagsCheck(nil), knownvalue.Null()),
 			},
 		},
@@ -136,17 +136,17 @@ func TestWorkspaceResource_tags(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            config(`{ env = "prod", team = "platform" }`),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectWorkspace(1, "Tagged", defaultResidency, tagsCheck(map[string]string{"env": "prod", "team": "platform"}), knownvalue.Null()),
 			},
 			{
 				Config:            config(`{ team = "infra", cost = "42" }`),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectWorkspace(1, "Tagged", defaultResidency, tagsCheck(map[string]string{"team": "infra", "cost": "42"}), knownvalue.Null()),
 			},
 			{
 				Config:            config(`{}`),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectWorkspace(1, "Tagged", defaultResidency, tagsCheck(nil), knownvalue.Null()),
 			},
 		},
@@ -170,7 +170,7 @@ func TestWorkspaceResource_unmanagedTags(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           workspaceConfig("  name = \"Free\"\n"),
-				ConfigPlanChecks: expectAction(workspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate),
 				Check: func(*terraform.State) error {
 					srv.mu.Lock()
 					defer srv.mu.Unlock()
@@ -180,7 +180,7 @@ func TestWorkspaceResource_unmanagedTags(t *testing.T) {
 			},
 			{
 				Config:            workspaceConfig("  name = \"Free (2)\"\n"),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectWorkspace(1, "Free (2)", defaultResidency, tagsCheck(map[string]string{"owner": "console"}), knownvalue.Null()),
 			},
 		},
@@ -206,12 +206,12 @@ func TestWorkspaceResource_dataResidency(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            config(`["us", "global"]`, "us"),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectWorkspace(1, "Resident", residencyCheck([]string{"us", "global"}, "us"), tagsCheck(nil), knownvalue.Null()),
 			},
 			{
 				Config:            config(`["unrestricted"]`, "global"),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectWorkspace(1, "Resident", defaultResidency, tagsCheck(nil), knownvalue.Null()),
 			},
 		},
@@ -241,23 +241,23 @@ func TestWorkspaceResource_externalKey(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            config(""),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectWorkspace(1, "Secured", defaultResidency, tagsCheck(nil), knownvalue.Null()),
 			},
 			{
 				Config:            config("ekey_first"),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectWorkspace(1, "Secured", defaultResidency, tagsCheck(nil), knownvalue.StringExact("ekey_first")),
 			},
 			{
 				// Removing the argument keeps the attached key.
 				Config:            config(""),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectWorkspace(1, "Secured", defaultResidency, tagsCheck(nil), knownvalue.StringExact("ekey_first")),
 			},
 			{
 				Config:            config("ekey_second"),
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectWorkspace(2, "Secured", defaultResidency, tagsCheck(nil), knownvalue.StringExact("ekey_second")),
 			},
 		},
@@ -281,17 +281,17 @@ func TestWorkspaceResource_goneOutsideTerraform(t *testing.T) {
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		CheckDestroy:             srv.checkArchived(workspaceID(3)),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(workspaceAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.setArchived(workspaceID(1)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectWorkspace(2, "Ephemeral", defaultResidency, tagsCheck(nil), knownvalue.Null()),
 			},
 			{
 				PreConfig:         func() { srv.deleteWS(workspaceID(2)) },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(workspaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectWorkspace(3, "Ephemeral", defaultResidency, tagsCheck(nil), knownvalue.Null()),
 			},
 		},
@@ -311,11 +311,11 @@ func TestWorkspaceResource_archiveNotFound(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: workspaceConfig("  name = \"Racing\"\n"), ConfigPlanChecks: expectAction(workspaceAddr, plancheck.ResourceActionCreate)},
+			{Config: workspaceConfig("  name = \"Racing\"\n"), ConfigPlanChecks: providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:        func() { srv.FailNext(routeArchiveWorkspace, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AdminKey),
-				ConfigPlanChecks: expectAction(workspaceAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -338,7 +338,7 @@ func TestWorkspaceResource_apiErrors(t *testing.T) {
 				Config:      workspaceConfig("  name = \"Faulty\"\n"),
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+create\s+workspace:\s+API\s+error\s+\(400\s+invalid_request_error\)`),
 			},
-			{Config: workspaceConfig("  name = \"Faulty\"\n"), ConfigPlanChecks: expectAction(workspaceAddr, plancheck.ResourceActionCreate)},
+			{Config: workspaceConfig("  name = \"Faulty\"\n"), ConfigPlanChecks: providertest.ExpectAction(workspaceAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetWorkspace, http.StatusForbidden, 1) },
 				Config:      workspaceConfig("  name = \"Faulty\"\n"),

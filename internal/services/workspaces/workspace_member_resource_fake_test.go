@@ -72,7 +72,7 @@ func TestWorkspaceMemberResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            memberConfig(ws, "user_alice", "workspace_developer"),
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMember(ws, "user_alice", "workspace_developer"),
 			},
 			{
@@ -83,12 +83,12 @@ func TestWorkspaceMemberResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            memberConfig(ws, "user_alice", "workspace_admin"),
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectMember(ws, "user_alice", "workspace_admin"),
 			},
 			{
 				Config:            memberConfig(ws, "user_bob", "workspace_restricted_developer"),
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectMember(ws, "user_bob", "workspace_restricted_developer"),
 			},
 		},
@@ -118,11 +118,11 @@ func TestWorkspaceMemberResource_moveWorkspace(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           memberConfig(workspaceID(1), "user_alice", "workspace_user"),
-				ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionCreate),
 			},
 			{
 				Config:            memberConfig(workspaceID(2), "user_alice", "workspace_user"),
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectMember(workspaceID(2), "user_alice", "workspace_user"),
 			},
 		},
@@ -144,11 +144,11 @@ func TestWorkspaceMemberResource_removedOutsideTerraform(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.dropMember(ws, "user_alice") },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(memberAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(memberAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMember(ws, "user_alice", "workspace_user"),
 			},
 		},
@@ -166,11 +166,11 @@ func TestWorkspaceMemberResource_removeNotFound(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: memberConfig(workspaceID(1), "user_alice", "workspace_user"), ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionCreate)},
+			{Config: memberConfig(workspaceID(1), "user_alice", "workspace_user"), ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:        func() { srv.FailNext(routeRemoveMember, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AdminKey),
-				ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -193,7 +193,7 @@ func TestWorkspaceMemberResource_apiErrors(t *testing.T) {
 				Config:      memberConfig("wrkspc_missing", "user_alice", "workspace_user"),
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+create\s+workspace\s+member:\s+API\s+error\s+\(404\s+not_found_error\)`),
 			},
-			{Config: memberConfig(ws, "user_alice", "workspace_user"), ConfigPlanChecks: expectAction(memberAddr, plancheck.ResourceActionCreate)},
+			{Config: memberConfig(ws, "user_alice", "workspace_user"), ConfigPlanChecks: providertest.ExpectAction(memberAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeGetMember, http.StatusForbidden, 1) },
 				Config:      memberConfig(ws, "user_alice", "workspace_user"),

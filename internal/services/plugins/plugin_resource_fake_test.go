@@ -200,12 +200,9 @@ func TestPluginResource_intoMarketplaceThenPinned(t *testing.T) {
 				},
 			},
 			{
-				PreConfig: func() { srv.uploadVersionOutOfBand("plugin_0001", map[string]any{"manifest_version": "3.0.0"}) },
-				Config:    pinned,
-				ConfigPlanChecks: resource.ConfigPlanChecks{
-					PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(pluginAddr, plancheck.ResourceActionNoop)},
-					PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-				},
+				PreConfig:        func() { srv.uploadVersionOutOfBand("plugin_0001", map[string]any{"manifest_version": "3.0.0"}) },
+				Config:           pinned,
+				ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("served_version_id"), knownvalue.StringExact("pluginver_0002")),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("latest_version_id"), knownvalue.StringExact("pluginver_0004")),

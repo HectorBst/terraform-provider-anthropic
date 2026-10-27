@@ -23,10 +23,7 @@ func environmentID(n int) string { return fmt.Sprintf("env_%024d", n) }
 
 // expectEnvironmentCreated checks that the step creates the environment and
 // that the refresh after the apply plans nothing.
-var expectEnvironmentCreated = resource.ConfigPlanChecks{
-	PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(environmentAddr, plancheck.ResourceActionCreate)},
-	PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
-}
+var expectEnvironmentCreated = providertest.ExpectAction(environmentAddr, plancheck.ResourceActionCreate)
 
 // An environment deleted outside Terraform is dropped by the refresh and
 // re-created from the configuration by the next apply, instead of failing the

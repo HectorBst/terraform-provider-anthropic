@@ -78,7 +78,7 @@ func TestRBACGroupMemberResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            groupMemberConfig(g, "user_alice"),
-				ConfigPlanChecks:  expectAction(groupMemberAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectGroupMember(g, "user_alice"),
 			},
 			{
@@ -89,7 +89,7 @@ func TestRBACGroupMemberResource_lifecycle(t *testing.T) {
 			},
 			{
 				Config:            groupMemberConfig(g, "user_bob"),
-				ConfigPlanChecks:  expectAction(groupMemberAddr, plancheck.ResourceActionReplace),
+				ConfigPlanChecks:  providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionReplace),
 				ConfigStateChecks: expectGroupMember(g, "user_bob"),
 			},
 		},
@@ -129,7 +129,7 @@ func TestRBACGroupMemberResource_stopsAtTheUsersPage(t *testing.T) {
 			},
 			{
 				Config:            groupMemberConfig(g, "user_alice"),
-				ConfigPlanChecks:  expectAction(groupMemberAddr, plancheck.ResourceActionNoop),
+				ConfigPlanChecks:  providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionNoop),
 				ConfigStateChecks: expectGroupMember(g, "user_alice"),
 			},
 		},
@@ -153,11 +153,11 @@ func TestRBACGroupMemberResource_goneOutsideTerraform(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(groupMemberAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:         func() { srv.dropMember(g, "user_alice") },
 				Config:            config,
-				ConfigPlanChecks:  expectAction(groupMemberAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectGroupMember(g, "user_alice"),
 			},
 			{
@@ -183,11 +183,11 @@ func TestRBACGroupMemberResource_removeNotFound(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: groupMemberConfig(groupID(2), "user_alice"), ConfigPlanChecks: expectAction(groupMemberAddr, plancheck.ResourceActionCreate)},
+			{Config: groupMemberConfig(groupID(2), "user_alice"), ConfigPlanChecks: providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:        func() { srv.FailNext(routeDelGroupMember, http.StatusNotFound, 1) },
 				Config:           providertest.ProviderConfig(sdktest.AdminKey),
-				ConfigPlanChecks: expectAction(groupMemberAddr, plancheck.ResourceActionDestroy),
+				ConfigPlanChecks: providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionDestroy),
 			},
 		},
 	})
@@ -212,7 +212,7 @@ func TestRBACGroupMemberResource_apiErrors(t *testing.T) {
 				ImportStateId: groupID(2),
 				ExpectError:   regexp.MustCompile(`(?s)Invalid\s+Import\s+ID.*<rbac_group_id>:<user_id>`),
 			},
-			{Config: config, ConfigPlanChecks: expectAction(groupMemberAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(groupMemberAddr, plancheck.ResourceActionCreate)},
 			{
 				PreConfig:   func() { srv.FailNext(routeListGroupMember, http.StatusForbidden, 1) },
 				Config:      config,
