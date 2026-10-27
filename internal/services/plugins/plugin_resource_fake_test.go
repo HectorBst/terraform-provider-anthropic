@@ -82,7 +82,7 @@ func TestPluginResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           pluginConfig(base + "  release_notes = \"First release\"\n"),
-				ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: append(expectPlugin("plugin_0001", "pluginver_0002", false),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("latest_version_id"), knownvalue.StringExact("pluginver_0002")),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("release_notes"), knownvalue.StringExact("First release"))),
@@ -96,16 +96,16 @@ func TestPluginResource_lifecycle(t *testing.T) {
 			{
 				// A version uploaded in claude.ai is served while the plugin is
 				// not pinned; naming the first one rolls back and pins.
-				PreConfig:        func() { srv.uploadVersionOutOfBand("plugin_0001", "2.0.0") },
+				PreConfig:        func() { srv.uploadVersionOutOfBand("plugin_0001", map[string]any{"manifest_version": "2.0.0"}) },
 				Config:           pluginConfig(pinned + "  release_notes = \"First release\"\n"),
-				ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: append(expectPlugin("plugin_0001", "pluginver_0002", true),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("latest_version_id"), knownvalue.StringExact("pluginver_0003"))),
 			},
 			{
 				// A create-only input changes in state only.
 				Config:           pluginConfig(pinned + "  release_notes = \"Second release\"\n"),
-				ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("release_notes"), knownvalue.StringExact("Second release")),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("served_version_id"), knownvalue.StringExact("pluginver_0002")),
@@ -114,7 +114,7 @@ func TestPluginResource_lifecycle(t *testing.T) {
 			{
 				PreConfig:         func() { srv.deletePluginOutOfBand("plugin_0001") },
 				Config:            pluginConfig(base),
-				ConfigPlanChecks:  expectAction(pluginAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(pluginAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectPlugin("plugin_0004", "pluginver_0005", false),
 			},
 		},
@@ -152,10 +152,10 @@ func TestPluginResource_pinWhatIsServed(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: pluginConfig(base), ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionCreate)},
+			{Config: pluginConfig(base), ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionCreate)},
 			{
 				Config:            pluginConfig(base + "  served_version_id = \"pluginver_0002\"\n"),
-				ConfigPlanChecks:  expectAction(pluginAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(pluginAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectPlugin("plugin_0001", "pluginver_0002", true),
 			},
 		},
@@ -171,6 +171,8 @@ func TestPluginResource_intoMarketplaceThenPinned(t *testing.T) {
 	t.Parallel()
 	srv := newPluginsFake(t, 0)
 	srv.putMarketplace("marketplace_sales", "sales", "", "manual", "available")
+	// A plugin of marketplace_sales inherits its default.
+	srv.setUpload(map[string]any{"organization_installation_preference": "available"})
 	dir := writePluginDir(t, "sales-toolkit", "1.4.0")
 	base := "  source_dir = " + hcl(dir) + "\n  marketplace_id = \"marketplace_sales\"\n"
 	pinned := pluginConfig(base + "  served_version_id = \"pluginver_0002\"\n")
@@ -180,7 +182,7 @@ func TestPluginResource_intoMarketplaceThenPinned(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           pluginConfig(base),
-				ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("marketplace_id"), knownvalue.StringExact("marketplace_sales")),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("organization_installation_preference"), knownvalue.StringExact("available")),
@@ -188,9 +190,9 @@ func TestPluginResource_intoMarketplaceThenPinned(t *testing.T) {
 				},
 			},
 			{
-				PreConfig:        func() { srv.uploadVersionOutOfBand("plugin_0001", "v2.0.0") },
+				PreConfig:        func() { srv.uploadVersionOutOfBand("plugin_0001", map[string]any{"manifest_version": "2.0.0"}) },
 				Config:           pinned,
-				ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("served_version_id"), knownvalue.StringExact("pluginver_0002")),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("served_version_pinned"), knownvalue.Bool(true)),
@@ -198,7 +200,7 @@ func TestPluginResource_intoMarketplaceThenPinned(t *testing.T) {
 				},
 			},
 			{
-				PreConfig: func() { srv.uploadVersionOutOfBand("plugin_0001", "3.0.0") },
+				PreConfig: func() { srv.uploadVersionOutOfBand("plugin_0001", map[string]any{"manifest_version": "3.0.0"}) },
 				Config:    pinned,
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(pluginAddr, plancheck.ResourceActionNoop)},
@@ -228,7 +230,7 @@ func TestPluginResource_deleteToleratesNotFound(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{
-			{Config: config, ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionCreate)},
+			{Config: config, ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionCreate)},
 			{PreConfig: func() { srv.FailNext(routeDeletePlugin, http.StatusNotFound, 1) }, Config: config, Destroy: true},
 		},
 	})
@@ -264,6 +266,8 @@ func TestPluginResource_errors(t *testing.T) {
 		t.Parallel()
 		srv := newPluginsFake(t, 0)
 		holder, _ := srv.putOrgPlugin("sales-toolkit")
+		srv.failNext(routeCreatePlugin, http.StatusConflict, "name already taken",
+			map[string]any{"error_code": "plugin_name_taken", "plugin_id": holder})
 		resource.UnitTest(t, resource.TestCase{
 			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 			Steps: []resource.TestStep{{
@@ -282,11 +286,13 @@ func TestPluginResource_errors(t *testing.T) {
 		resource.UnitTest(t, resource.TestCase{
 			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 			Steps: []resource.TestStep{
-				{Config: pluginConfig(base), ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionCreate)},
+				{Config: pluginConfig(base), ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionCreate)},
 				{
 					PreConfig: func() {
-						srv.setScan(map[string]any{"status": "completed", "assessment": "fail", "reason": "credential-exposure"})
-						srv.uploadVersionOutOfBand("plugin_0001", "2.0.0")
+						srv.uploadVersionOutOfBand("plugin_0001", map[string]any{"manifest_version": "2.0.0",
+							"content_scan": map[string]any{"status": "completed", "assessment": "fail", "reason": "credential-exposure"}})
+						srv.failNext(routeUpdatePlugin, http.StatusBadRequest, "the version's content scan failed",
+							map[string]any{"error_code": "scan_failed", "plugin_version_id": "pluginver_0003"})
 					},
 					Config: pluginConfig(base + "  served_version_id = \"pluginver_0003\"\n"),
 					ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+serve\s+plugin\s+version\s+pluginver_0003:.*\(400.*` +
@@ -345,7 +351,7 @@ func TestPluginResource_registrationPending(t *testing.T) {
 			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 			Steps: []resource.TestStep{{
 				Config:           pluginConfig("  source_dir = " + hcl(dir) + "\n  release_notes = \"First release\"\n"),
-				ConfigPlanChecks: expectAction(pluginAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(pluginAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("id"), knownvalue.StringExact("plugin_0001")),
 					statecheck.ExpectKnownValue(pluginAddr, tfjsonpath.New("served_version_id"), knownvalue.StringExact("pluginver_0003")),
@@ -392,6 +398,7 @@ func TestPluginResource_serveUnknownVersion(t *testing.T) {
 		Steps: []resource.TestStep{
 			{Config: pluginConfig(base)},
 			{
+				PreConfig:   func() { srv.FailNext(routeUpdatePlugin, http.StatusNotFound, 1) },
 				Config:      pluginConfig(base + "  served_version_id = \"pluginver_9999\"\n"),
 				ExpectError: regexp.MustCompile(`Unable\s+to\s+serve\s+plugin\s+version\s+pluginver_9999:\s+API\s+error\s+\(404\s+not_found_error\)`),
 			},

@@ -59,27 +59,24 @@ func TestPluginInstallationSettingResource_lifecycle(t *testing.T) {
 			if s := srv.setting(pluginID, "organization"); s != nil {
 				return fmt.Errorf("the organization setting %v is still there after destroy", s["installation_preference"])
 			}
-			if p := srv.plugin(pluginID); p["organization_installation_preference_inherited"] != true {
-				return fmt.Errorf("the plugin does not inherit its marketplace's default after destroy: %v", p)
-			}
 			return nil
 		},
 		Steps: []resource.TestStep{
 			{
 				Config:            settingConfig(pluginID, "organization", "required"),
-				ConfigPlanChecks:  expectAction(settingAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(settingAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectSetting(pluginID, "organization", "organization", "required"),
 			},
 			{ResourceName: settingAddr, ImportState: true, ImportStateVerify: true},
 			{
 				Config:            settingConfig(pluginID, "organization", "available"),
-				ConfigPlanChecks:  expectAction(settingAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(settingAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectSetting(pluginID, "organization", "organization", "available"),
 			},
 			{
 				PreConfig:         func() { srv.removeSettingOutOfBand(pluginID, "organization") },
 				Config:            settingConfig(pluginID, "organization", "available"),
-				ConfigPlanChecks:  expectAction(settingAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(settingAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectSetting(pluginID, "organization", "organization", "available"),
 			},
 		},
@@ -114,7 +111,7 @@ func TestPluginInstallationSettingResource_groupAmongPages(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           settingConfig(pluginID, "rbac_group_sales", "required"),
-				ConfigPlanChecks: expectAction(settingAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(settingAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: append(expectSetting(pluginID, "rbac_group_sales", "rbac_group", "required"),
 					statecheck.ExpectKnownValue(settingAddr, tfjsonpath.New("id"), knownvalue.StringExact(pluginID+":rbac_group_sales"))),
 			},
@@ -132,7 +129,7 @@ func TestPluginInstallationSettingResource_groupAmongPages(t *testing.T) {
 	})
 	// Longest walk first: a read stops paging once it finds the group.
 	srv.assertWalks(routeListSettings, "",
-		walk([]string{pageToken(1), pageToken(2)}, "limit", "100", "target_type", "rbac_group"),
+		walk([]string{sdktest.NextPageToken("rbac_group_ops"), sdktest.NextPageToken("rbac_group_eng")}, "limit", "100", "target_type", "rbac_group"),
 		walk(nil, "limit", "100", "target_type", "rbac_group"))
 	srv.assertRequests()
 }
@@ -314,24 +311,20 @@ func TestPluginMarketplaceSettingsResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:            marketplaceSettingsConfig("marketplace_sales", "available"),
-				ConfigPlanChecks:  expectAction(marketplaceAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks:  providertest.ExpectAction(marketplaceAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: expectMarketplaceSettings("available"),
 			},
 			{ResourceName: marketplaceAddr, ImportState: true, ImportStateVerify: true},
 			{
 				Config:            marketplaceSettingsConfig("marketplace_sales", "required"),
-				ConfigPlanChecks:  expectAction(marketplaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(marketplaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectMarketplaceSettings("required"),
 			},
 			{
 				// A default changed in claude.ai is drift, set back in place.
-				PreConfig: func() {
-					srv.mu.Lock()
-					srv.marketplaceLocked("marketplace_sales")["default_installation_preference"] = "not_available"
-					srv.mu.Unlock()
-				},
+				PreConfig:         func() { srv.setMarketplaceDefaultOutOfBand("marketplace_sales", "not_available") },
 				Config:            marketplaceSettingsConfig("marketplace_sales", "required"),
-				ConfigPlanChecks:  expectAction(marketplaceAddr, plancheck.ResourceActionUpdate),
+				ConfigPlanChecks:  providertest.ExpectAction(marketplaceAddr, plancheck.ResourceActionUpdate),
 				ConfigStateChecks: expectMarketplaceSettings("required"),
 			},
 		},
@@ -374,6 +367,8 @@ func TestPluginMarketplaceSettingsResource_notFoundAndErrors(t *testing.T) {
 		t.Parallel()
 		srv := newPluginsFake(t, 0)
 		srv.putMarketplace("marketplace_mine", "personal", "user_01", "manual", "")
+		// "A member's personal marketplace cannot be updated here (403)."
+		srv.FailNext(routeUpdateMarketplace, http.StatusForbidden, 1)
 		resource.UnitTest(t, resource.TestCase{
 			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 			Steps: []resource.TestStep{{

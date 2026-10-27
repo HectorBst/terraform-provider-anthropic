@@ -60,6 +60,7 @@ func TestPluginVersionResource_lifecycle(t *testing.T) {
 	srv := newPluginsFake(t, 0)
 	pluginID, _ := srv.putOrgPlugin("sales-toolkit")
 	dir := writePluginDir(t, "sales-toolkit", "1.5.0")
+	srv.setUpload(map[string]any{"manifest_version": "1.5.0"})
 	config := versionConfig(pluginID, "  source_dir = "+hcl(dir)+"\n  release_notes = \"Adds the call-prep command.\"\n")
 	var firstHash string
 
@@ -74,7 +75,7 @@ func TestPluginVersionResource_lifecycle(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:           config,
-				ConfigPlanChecks: expectAction(versionAddr, plancheck.ResourceActionCreate),
+				ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate),
 				ConfigStateChecks: append(expectVersion("pluginver_0003", pluginID, "1.5.0", knownvalue.StringExact("Adds the call-prep command.")),
 					statecheck.ExpectKnownValue(versionAddr, tfjsonpath.New("components"), knownvalue.ListExact([]knownvalue.Check{
 						knownvalue.ObjectExact(map[string]knownvalue.Check{
@@ -159,12 +160,18 @@ func TestPluginVersionResource_fromArchive(t *testing.T) {
 	srv := newPluginsFake(t, 0)
 	pluginID, _ := srv.putOrgPlugin("sales-toolkit")
 	archive := writePluginArchive(t, "sales-toolkit", "2.0.0")
+	// What the API reads from the archive's manifest and skill.
+	srv.setUpload(map[string]any{"display_name": nil, "description": nil, "manifest_version": "2.0.0", "reach": "remote",
+		"components": []any{
+			map[string]any{"type": "skill", "name": "call-prep", "description": "Prepares a sales call."},
+			map[string]any{"type": "mcp_server", "name": "crm", "description": nil},
+		}})
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 		Steps: []resource.TestStep{{
 			Config:           versionConfig(pluginID, "  source_archive = "+hcl(archive)+"\n"),
-			ConfigPlanChecks: expectAction(versionAddr, plancheck.ResourceActionCreate),
+			ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate),
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(versionAddr, tfjsonpath.New("manifest_version"), knownvalue.StringExact("2.0.0")),
 				statecheck.ExpectKnownValue(versionAddr, tfjsonpath.New("display_name"), knownvalue.Null()),
@@ -200,6 +207,7 @@ func TestPluginVersionResource_errors(t *testing.T) {
 		t.Parallel()
 		srv := newPluginsFake(t, 0)
 		pluginID, _ := srv.putOrgPlugin("sales-toolkit")
+		srv.failNext(routeCreateVersion, http.StatusBadRequest, `the manifest's name "other-plugin" is not the plugin's "sales-toolkit"`, nil)
 		resource.UnitTest(t, resource.TestCase{
 			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
 			Steps: []resource.TestStep{{

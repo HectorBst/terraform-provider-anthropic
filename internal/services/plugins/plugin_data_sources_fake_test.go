@@ -168,7 +168,7 @@ func TestPluginsDataSource_pagesFiltersAndEmpty(t *testing.T) {
 		},
 	})
 	srv.assertWalks(routeListPlugins, "",
-		walk([]string{pageToken(2)}, "limit", "100"),
+		walk([]string{sdktest.NextPageToken(b)}, "limit", "100"),
 		walk(nil, "limit", "100", "marketplace_id", libraryMarketplaceID, "owner_type", "organization"),
 		walk(nil, "limit", "100", "owner_user_id", "user_02"))
 	srv.assertRequests()
@@ -181,9 +181,8 @@ func TestPluginVersionsDataSource_pagesAndErrors(t *testing.T) {
 	t.Parallel()
 	srv := newPluginsFake(t, 2)
 	pluginID, v1 := srv.putOrgPlugin("sales-toolkit")
-	v2 := srv.uploadVersionOutOfBand(pluginID, "v2.0.0")
-	srv.setScan(nil)
-	v3 := srv.uploadVersionOutOfBand(pluginID, "3.0.0")
+	v2 := srv.uploadVersionOutOfBand(pluginID, map[string]any{"manifest_version": "2.0.0"})
+	v3 := srv.uploadVersionOutOfBand(pluginID, map[string]any{"manifest_version": "3.0.0", "content_scan": nil})
 	const addr = "data.anthropic_plugin_versions.test"
 	version := func(id, manifestVersion, displayName string, scanned bool) knownvalue.Check {
 		var scan knownvalue.Check = knownvalue.Null()
@@ -222,7 +221,7 @@ func TestPluginVersionsDataSource_pagesAndErrors(t *testing.T) {
 			},
 		},
 	})
-	srv.assertWalks(routeListVersions, "/v1/organizations/plugins/"+pluginID+"/versions", walk([]string{pageToken(2)}, "limit", "1000"))
+	srv.assertWalks(routeListVersions, "/v1/organizations/plugins/"+pluginID+"/versions", walk([]string{sdktest.NextPageToken(v2)}, "limit", "1000"))
 	srv.assertRequests()
 }
 
@@ -304,7 +303,7 @@ func TestPluginMarketplaceDataSources(t *testing.T) {
 		},
 	})
 	srv.assertWalks(routeListMarketplaces, "",
-		walk([]string{pageToken(1), pageToken(2)}, "limit", "1000"),
+		walk([]string{sdktest.NextPageToken("marketplace_user_01"), sdktest.NextPageToken("marketplace_sales")}, "limit", "1000"),
 		walk(nil, "limit", "1000", "owner_type", "organization", "source", "manual"),
 		walk(nil, "limit", "1000", "source", "gitlab"))
 	srv.assertRequests()
