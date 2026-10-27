@@ -42,6 +42,18 @@ type ProviderData struct {
 	// reject API keys. Nil when neither auth_token nor federation is
 	// configured.
 	OAuthClient *OAuthClient
+
+	// models backs Models. It is a value, not a pointer, so that every
+	// ProviderData has its own, however it was built.
+	models ModelInfoCache
+}
+
+// Models returns the Models API cache of this provider configuration (see
+// ModelInfoCache). It lives as long as the configuration: Terraform configures
+// the provider again for every operation, so a cached lifecycle is never older
+// than the plan that reads it, and two provider aliases never share one.
+func (pd *ProviderData) Models() *ModelInfoCache {
+	return &pd.models
 }
 
 // ForPlatform is the ProviderData of a provider alias configured for a cloud

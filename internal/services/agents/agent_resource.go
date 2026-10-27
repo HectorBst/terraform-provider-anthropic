@@ -38,6 +38,7 @@ import (
 var _ resource.Resource = &AgentResource{}
 var _ resource.ResourceWithImportState = &AgentResource{}
 var _ resource.ResourceWithConfigValidators = &AgentResource{}
+var _ resource.ResourceWithModifyPlan = &AgentResource{}
 
 func NewAgentResource() resource.Resource {
 	return &AgentResource{}
@@ -46,6 +47,10 @@ func NewAgentResource() resource.Resource {
 // AgentResource defines the resource implementation.
 type AgentResource struct {
 	client *anthropic.Client
+	// models caches the Models API lookups of the model lifecycle check
+	// (agent_model_lifecycle.go). It is the provider configuration's, since
+	// the framework builds a new resource for every request.
+	models *providerdata.ModelInfoCache
 }
 
 // --- Terraform data models ---
@@ -240,8 +245,13 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 		Attributes: map[string]schema.Attribute{
 			// --- Required ---
 			"model": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "The model that will power the agent (e.g. `claude-sonnet-4-6`).",
+				Required: true,
+				MarkdownDescription: "The model that will power the agent (e.g. `claude-sonnet-4-6`). " +
+					"At plan time the provider looks the model up in the Models API and checks its lifecycle: " +
+					"a `deprecated` model is a warning, since requests naming a model fail once it is retired; " +
+					"a `retired` model is an error when the plan creates the agent or changes `model` to it, " +
+					"and a warning when an existing agent keeps it (the agent can no longer run, but changes to other attributes still apply). " +
+					"The check is skipped when the lookup fails. The advisor models of `multiagent` are checked the same way.",
 			},
 			"name": schema.StringAttribute{
 				Required:            true,
@@ -526,7 +536,7 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							"model": schema.StringAttribute{
 								Required: true,
 								MarkdownDescription: "Advisor model ID. It must be at least as capable as the agent's model, " +
-									"or the API rejects the pairing.",
+									"or the API rejects the pairing. Its lifecycle is checked at plan time, as for `model`.",
 							},
 						},
 					},
@@ -552,8 +562,9 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 									MarkdownDescription: "Pinned version of the referenced agent (`agent` entries only). The API pins the latest version when omitted and echoes it back.",
 								},
 								"model": schema.StringAttribute{
-									Optional:            true,
-									MarkdownDescription: "Advisor model ID. Required when `type` is `advisor`, forbidden otherwise.",
+									Optional: true,
+									MarkdownDescription: "Advisor model ID. Required when `type` is `advisor`, forbidden otherwise. " +
+										"Its lifecycle is checked at plan time, as for `model`.",
 								},
 							},
 						},
@@ -616,6 +627,20 @@ func (r *AgentResource) Configure(_ context.Context, req resource.ConfigureReque
 	}
 
 	r.client = pd.Client
+	r.models = pd.Models()
+}
+
+// --- ModifyPlan ---
+
+// ModifyPlan checks the lifecycle of the models the plan names
+// (checkModelLifecycle) and changes nothing in the plan. It skips a destroy,
+// and a provider not configured yet (credentials unknown at plan time).
+func (r *AgentResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || r.client == nil {
+		return
+	}
+	refs := agentModelRefs(ctx, req.Plan)
+	resp.Diagnostics.Append(checkModelLifecycle(ctx, r.lookupModels(modelLookupTimeout), refs, priorModels(ctx, req.State))...)
 }
 
 // --- Create ---

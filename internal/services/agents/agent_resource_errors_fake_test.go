@@ -181,7 +181,11 @@ func TestAgentResource_inputSchemaAsConfigured(t *testing.T) {
 				ExpectError: regexp.MustCompile(`(?s)Invalid\s+input_schema.*"lookup"`),
 			}},
 		})
-		srv.AssertCalled("", 0)
+		// The plan looked the model up (agent_model_lifecycle.go); the
+		// agents API saw nothing.
+		for _, route := range allAgentRoutes {
+			srv.AssertCalled(route, 0)
+		}
 	})
 }
 

@@ -275,7 +275,7 @@ These lists are not the only restrictions applied to the two tools:
 
 ### Required
 
-- `model` (String) The model that will power the agent (e.g. `claude-sonnet-4-6`).
+- `model` (String) The model that will power the agent (e.g. `claude-sonnet-4-6`). At plan time the provider looks the model up in the Models API and checks its lifecycle: a `deprecated` model is a warning, since requests naming a model fail once it is retired; a `retired` model is an error when the plan creates the agent or changes `model` to it, and a warning when an existing agent keeps it (the agent can no longer run, but changes to other attributes still apply). The check is skipped when the lookup fails. The advisor models of `multiagent` are checked the same way.
 - `name` (String) Human-readable name for the agent. 1-256 characters.
 
 ### Optional
@@ -455,7 +455,7 @@ Optional:
 
 Required:
 
-- `model` (String) Advisor model ID. It must be at least as capable as the agent's model, or the API rejects the pairing.
+- `model` (String) Advisor model ID. It must be at least as capable as the agent's model, or the API rejects the pairing. Its lifecycle is checked at plan time, as for `model`.
 
 
 <a id="nestedatt--multiagent--agents"></a>
@@ -468,7 +468,7 @@ Required:
 Optional:
 
 - `id` (String) ID of the referenced agent. Required when `type` is `agent`, forbidden otherwise.
-- `model` (String) Advisor model ID. Required when `type` is `advisor`, forbidden otherwise.
+- `model` (String) Advisor model ID. Required when `type` is `advisor`, forbidden otherwise. Its lifecycle is checked at plan time, as for `model`.
 - `version` (Number) Pinned version of the referenced agent (`agent` entries only). The API pins the latest version when omitted and echoes it back.
 
 

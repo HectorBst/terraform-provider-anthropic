@@ -36,6 +36,17 @@ const (
 
 var allAgentRoutes = []string{routeCreateAgent, routeListAgents, routeGetAgent, routeUpdateAgent, routeArchiveAgent}
 
+// routeGetModel is the Models API "get" the plan-time lifecycle check calls
+// (GA: no beta header, standard key). It takes a "Model identifier or alias"
+// and returns lifecycle, deprecated_at and retires_at
+// (https://platform.claude.com/docs/en/api/models/retrieve).
+const routeGetModel = "GET /v1/models/{model_id}"
+
+// activeModels are the models the agents tests name, served as active ("The
+// model is available for use, open to new adopters, and not scheduled for
+// retirement": deprecated_at and retires_at null).
+var activeModels = []string{"claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-5-5"}
+
 // Values the fake resolves for fields a request leaves to the API.
 const (
 	// fakeDefaultEffort is the per-model default effort: "Always present;
@@ -58,6 +69,9 @@ const (
 type agentsFake struct {
 	*sdktest.Server
 	agents *sdktest.Collection
+	// models is the Models API catalogue, by ID. An unknown model answers
+	// 404 not_found_error.
+	models *sdktest.Collection
 	// listPageSize, when not 0, caps the pages of the list below the limit
 	// the request sends, so a short list still spans several pages.
 	listPageSize int
@@ -69,13 +83,42 @@ type agentsFake struct {
 func newAgentsFake(t *testing.T) *agentsFake {
 	t.Helper()
 	srv := sdktest.NewServer(t)
-	f := &agentsFake{Server: srv, agents: srv.NewCollection("agent_")}
+	f := &agentsFake{Server: srv, agents: srv.NewCollection("agent_"), models: srv.NewCollection("")}
 	f.Handle(routeCreateAgent, f.create)
 	f.Handle(routeListAgents, f.list)
 	f.agents.HandleGet(routeGetAgent)
 	f.Handle(routeUpdateAgent, f.update)
 	f.agents.HandleArchive(routeArchiveAgent)
+	f.models.HandleGet(routeGetModel)
+	for _, id := range activeModels {
+		f.setModel(id, "active", nil, nil)
+	}
 	return f
+}
+
+// setModel serves model id with lifecycle and the two dates (RFC 3339
+// strings, or nil for null), as ModelInfo carries them.
+func (f *agentsFake) setModel(id, lifecycle string, deprecatedAt, retiresAt any) {
+	f.models.Put(map[string]any{
+		"type":          "model",
+		"id":            id,
+		"display_name":  id,
+		"created_at":    "2025-01-01T00:00:00Z",
+		"lifecycle":     lifecycle,
+		"deprecated_at": deprecatedAt,
+		"retires_at":    retiresAt,
+	})
+}
+
+// modelLookups returns the number of lookups of model id.
+func (f *agentsFake) modelLookups(id string) int {
+	n := 0
+	for _, r := range f.Requests(routeGetModel) {
+		if r.Path == "/v1/models/"+id {
+			n++
+		}
+	}
+	return n
 }
 
 const agentAddr = "anthropic_agent.test"
