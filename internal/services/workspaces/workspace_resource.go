@@ -480,7 +480,7 @@ func buildAllowedInferenceGeos(geos []string) json.RawMessage {
 	if len(geos) == 1 && geos[0] == "unrestricted" {
 		return json.RawMessage(`"unrestricted"`)
 	}
-	b, _ := json.Marshal(geos)
+	b, _ := json.Marshal(geos) //nolint:errchkjson // a []string always encodes, so there is no error to handle
 	return b
 }
 
