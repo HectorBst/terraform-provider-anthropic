@@ -28,52 +28,55 @@ The v1.67.0 → v1.84.0 bump changed nothing on the wire beyond the SDK's own ve
 
 ## Services
 
-Each directory below has a `CLAUDE.md` with the load-bearing details of its resources and data sources: API quirks, live probes, test gating. Claude Code loads it when a file in that directory is read or edited; read it before changing the service. Each line gives the resources, then after the semicolon the data sources (names without the `anthropic_` prefix), then the credential (see [Credentials and clients](#credentials-and-clients)).
+One directory per service under `internal/services/`, each with a `CLAUDE.md` holding the load-bearing details of its resources and data sources: API quirks, live probes, test gating. Claude Code loads it when a file in that directory is read or edited; read it before changing the service. Each line gives the resources, then after the semicolon the data sources (names without the `anthropic_` prefix), then the credential (see [Credentials and clients](#credentials-and-clients); the `Access` of each registration in `internal/provider/registry.go` gives the organization type).
 
 - `agents/`: `agent`; `agent`, `agents`. Standard key.
 - `apikeys/`: `api_key` (import-only); `api_key`, `api_keys`. Admin key.
 - `claudetag/`: `claude_tag_slack_channel`, `claude_tag_slack_workspace_settings`, `claude_tag_bundle_target`; `claude_tag_bundle(s)`, `claude_tag_slack_channel`, `claude_tag_slack_workspaces`. Claude Enterprise scoped Admin key (`read:claude_tag`, `write:claude_tag`), beta Claude Tag API through `internal/admin`.
-- `compliance/`: anthropic_compliance_settings singleton resource (admin API, raw `admin.Client`).
-- `compliance/`: see its `CLAUDE.md`.
+- `compliance/`: `compliance_settings`; none. Admin key.
 - `deployments/`: `deployment`; `deployment_runs`. Standard key.
 - `environments/`: `environment`; `environment`, `environments`. Standard key.
-- `externalkeys/`: anthropic_external_key resource + external_key/external_keys data sources (CMEK key records; admin API, raw `admin.Client`).
-- `externalkeys/`: see its `CLAUDE.md`.
-- `federation/`: anthropic_federation_issuer + anthropic_federation_rule + anthropic_federation_rule_workspace resources + federation_issuer(s)/federation_rule(s)/federation_rule_workspaces data sources (Beta; WIF issuers and rules, org:admin OAuth bearer only).
+- `externalkeys/`: `external_key`; `external_key(s)`. Admin key.
+- `federation/`: `federation_issuer`, `federation_rule`, `federation_rule_workspace`; `federation_issuer(s)`, `federation_rule(s)`, `federation_rule_workspaces`. OAuth bearer. Also holds the WIF staleness probe results.
 - `files/`: `file`; `file`, `files` (Files API GA). Standard key.
 - `memorystores/`: `memory_store`, `memory`; `memory_store(s)`, `memory`, `memories`. Standard key.
 - `messages/`: `message`; `count_tokens`. Standard key.
 - `models/`: none; `model`, `models`. Standard key.
 - `organizations/`: `invite`, `organization_member` (import-only); `organization`, `organization_member(s)`, `invite(s)`. Admin key.
-- `organizationwebhooks/`: anthropic_organization_webhook resource (admin API, raw `admin.Client`, beta header `webhooks-2026-10-07` on every call via `doOrganizationWebhookRequest`).
-- `organizationwebhooks/`: see its `CLAUDE.md`.
-- `plugins/`: Claude Enterprise Plugins API (beta `ce-plugins-2026-09-01`, raw `admin.Client`, Enterprise scoped admin key): anthropic_plugin + anthropic_plugin_version resources; multipart bodies built in plugin_source.go, requests in plugin_requests.go; no acceptance tests (Console test org), httptest + plan only.
-- `plugins/`: see its `CLAUDE.md`.
-- `rbac/`: anthropic_rbac_group + anthropic_rbac_group_member resources + rbac_group/rbac_groups data sources (Claude Enterprise only; raw `admin.Client` since RBAC is in the SDK only from v1.77.0; own package rather than organizations/ because groups are enterprise-wide with their own `rbac_groups` scopes, like federation/ and serviceaccounts/ sit beside organizations/).
-- `rbac/`: see its `CLAUDE.md`.
+- `organizationwebhooks/`: `organization_webhook`; none. Admin key, beta header `webhooks-2026-10-07`.
+- `plugins/`: `plugin`, `plugin_version`, `plugin_installation_setting`, `plugin_marketplace_settings`; `plugin(s)`, `plugin_versions`, `plugin_marketplace(s)`. Claude Enterprise scoped Admin key (`read:plugins`, `write:plugins`), beta Plugins API through `internal/admin`.
+- `rbac/`: `rbac_group`, `rbac_group_member`; `rbac_group(s)`. Claude Enterprise scoped Admin key created for all linked organizations (`read:rbac_groups`, `write:rbac_groups`).
 - `serviceaccounts/`: `service_account`, `service_account_workspace`; `service_account(s)`, `service_account_workspaces`. OAuth bearer.
 - `skills/`: `skill`, `skill_version`; `skill(s)`, `skill_version(s)`. Standard key.
-- `spendlimits/`: anthropic_spend_limit resource (raw `admin.Client`, SDK has them only from v1.77.0; Claude Enterprise `user` limits, Console `organization`/`workspace` limits in early access).
-- `spendlimits/`: see its `CLAUDE.md`.
-- `telemetrydestinations/`: anthropic_telemetry_destination resource (OpenTelemetry export; admin API, raw `admin.Client`, beta header `telemetry-destinations-2026-08-11` on every call via `doTelemetryRequest`).
-- `telemetrydestinations/`: see its `CLAUDE.md`.
-- `tunnels/`: anthropic_tunnel + anthropic_tunnel_certificate resources + tunnel/tunnels data sources (MCP tunnels, research preview; `client.Beta.Tunnels`/`client.Beta.Tunnels.Certificates`, workspace-scoped `/v1/tunnels`, never the deprecated `/v1/organizations/tunnels`; beta header `mcp-tunnels-2026-06-22` sent by the SDK; `pd.OAuthClient` carrying a `workspace:manage_tunnels` token, API keys rejected).
-- `tunnels/`: see its `CLAUDE.md`.
+- `spendlimits/`: `spend_limit`; none. Admin key: Claude Enterprise scoped key (`read:spend_limits`, `write:spend_limits`), or a Claude Console one in the early access preview.
+- `telemetrydestinations/`: `telemetry_destination`; none. Admin key, beta header `telemetry-destinations-2026-08-11`.
+- `tunnels/`: `tunnel`, `tunnel_certificate`; `tunnel(s)`. OAuth bearer with the `workspace:manage_tunnels` scope.
 - `userprofiles/`: `user_profile`; `user_profile(s)`. Standard key (beta not enabled for the test organization).
-- `vaults/`: `vault`, `vault_credential`; none. Standard key. Also holds the vaults read-after-write measurements.
-- `workspaces/`: `workspace`, `workspace_member`; `workspace(s)`, `workspace_member(s)`, `workspace_rate_limits`. Admin key.
+- `vaults/`: `vault`, `vault_credential`; `vault(s)`. Standard key. Also holds the vaults read-after-write measurements.
+- `workspaces/`: `workspace`, `workspace_member`, `workspace_rate_limit`; `workspace(s)`, `workspace_member(s)`, `workspace_rate_limits`. Admin key.
 
 ## Adding a resource or data source
 
 1. Create `internal/services/<service>/<name>_resource.go` (or `_data_source.go`) in `package <service>`, implementing `resource.Resource` (or `datasource.DataSource`).
-2. Register its factory in `Resources()` (or `DataSources()`) in `internal/provider/provider.go`.
+2. Register its factory in `resourceRegistrations()` (or `dataSourceRegistrations()`) in `internal/provider/registry.go`, with, on the same line, its `Access` (organization type and credential) and its support on each cloud platform. The tests print the credential table, and the availability table when a platform does not support the type, to paste into `templates/index.md.tmpl`.
 3. Add an example under `examples/resources/<name>/` (or `examples/data-sources/<name>/`). The main file (`resource.tf` / `data_source.tf`) holds only the resource or data blocks and outputs, because the Registry docs embed it verbatim. The `terraform {}` block (`required_version`, and `required_providers` mapping `anthropic` to `ippontech/anthropic` for the native tests) goes in a sibling `versions.tf` ([#231](https://github.com/ippontech/terraform-provider-anthropic/issues/231)). Pin the provider with `~> 1.0`. CI runs tflint with `preset = "all"`, so every `output` needs a `description` and every `versions.tf` a `required_version` (#229).
-4. Add `templates/resources/<name>.md.tmpl` (or `templates/data-sources/<name>.md.tmpl`) with a non-empty `subcategory` (e.g. `"Agents"`, `"Messages"`); without it the page appears ungrouped on the Terraform Registry.
+4. Add `templates/resources/<name>.md.tmpl` (or `templates/data-sources/<name>.md.tmpl`) with a non-empty `subcategory` taken from [Naming and grouping](#naming-and-grouping); without it the page appears ungrouped on the Terraform Registry.
 5. Add a native test `tests/<name>.tftest.hcl` and Go tests, see [Testing](#testing).
 6. Run `make`, which also regenerates the docs, then `pre-commit run -a`.
 7. Record load-bearing details in the service's `CLAUDE.md`; for a new service directory, create one and add it to [Services](#services).
 
 Guides live in `templates/guides/<name>.md.tmpl` (rendered to `docs/guides/`, `subcategory` required too). Templates are Go text/templates: a literal `{{ ... }}`, such as `${{ vars.X }}`, fails `make generate` with `function "vars" not defined`, and since tfplugindocs wipes `docs/` first, every `docs/**/*.md` stays deleted until a successful re-run. Use placeholder values or escape as `{{"{{"}}`. Validate a guide's HCL by hand (`terraform validate` in a scratch directory, against a freshly built provider), since no native test covers it ([#240](https://github.com/ippontech/terraform-provider-anthropic/issues/240)).
+
+## Naming and grouping
+
+Stable information goes in a type's name, changing information in its docs. The API object and the product rarely change; which organization type, platform or key can call an endpoint does, and a type name is expensive to change once released.
+
+- **Type names.** A type takes the API object's name, prefixed `anthropic_`. A workspace-level object (`/v1/<object>`) keeps the bare name (`anthropic_skill`, `anthropic_vault`). An organization object (`/v1/organizations/<object>`) takes `organization_` when the bare name is taken or ambiguous: `anthropic_organization_member` next to `anthropic_workspace_member`, and an organization-level skill would be `anthropic_organization_skill`. A product with its own path segment gives its prefix (`claude_tag_`). A distinct API name is kept (`rbac_group`, `user_profile`). The organization type and the credential never go in the name: they go in the subcategory, in the registration's `Access` (the credential table of the provider index) and in the first sentence of the page.
+- **Subcategories** group the types by product, prefixed with the organization type when only one can call them: `Managed Agents`, `MCP Tunnels`, `Messages`, `Models`, `Files`, `Skills`, `User Profiles`, `Claude Console: Workspaces and Rate Limits`, `Claude Console: Organization`, `Claude Console: Service Accounts and Federation`, `Members and Invites`, `Compliance`, `Claude Enterprise: Groups`, `Spend Limits`, `Claude Enterprise: Plugins`, `Claude Enterprise: Claude Tag`, and `Guides` for the guides. A new type takes its product's label; add a label only for a new product.
+- **Data sources.** Add a data source only when a resource of the provider consumes what it returns: an ID or a version that another resource takes as input. No report, history or activity feed, and no data source that only mirrors a resource.
+- **Write-only arguments** end in `_wo`, with a `_wo_version` trigger: see [Write-only secret attributes](#write-only-secret-attributes).
+- **`_settings`.** A resource that adjusts an object it neither creates nor deletes ends in `_settings`: `compliance_settings`, `plugin_marketplace_settings`, `claude_tag_slack_workspace_settings`. Its create adopts the object, and its destroy never deletes it.
+- **Composite import IDs** join their parts with `:` (`<workspace_id>:<user_id>`). `anthropic_skill_version` also accepts the `/` it took first.
 
 ## Testing
 
@@ -265,10 +268,10 @@ if raw := t.SomeField.RawJSON(); raw != "" && raw != "null" {
 
 ### Write-only secret attributes
 
-Secrets that must never reach state use write-only attributes (plugin framework v1.11+, Terraform ≥ 1.11): `schema.StringAttribute{Optional: true, WriteOnly: true, Sensitive: true}` (`Optional` or `Required`, never `Computed`). Reference: `internal/services/vaults/vault_credential_resource.go`.
+Secrets that must never reach state use write-only attributes (plugin framework v1.11+, Terraform ≥ 1.11): `schema.StringAttribute{Optional: true, WriteOnly: true, Sensitive: true}` (`Optional` or `Required`, never `Computed`). Name them with a `_wo` suffix, as HashiCorp's naming guidance asks. Reference: `headers_wo` and `headers_wo_version` of `anthropic_telemetry_destination` (`internal/services/telemetrydestinations/telemetry_destination_resource.go`). `anthropic_vault_credential` (`token`, `access_token`, `secret_value` and the refresh secrets, with the one trigger `token_wo_version`) predates the rule and is a known exception: renaming its attributes breaks configurations, so it waits for a major version. Do not copy its names.
 
-- In Create and Update, read them from `req.Config`, not the plan or state: `req.Config.GetAttribute(ctx, path.Root("token"), &v)`, nested via `path.Root("refresh").AtName("refresh_token")`. Never write them to state or fill them from API responses.
-- Pair each with a normal `_wo_version` Int64 stored in state (e.g. `token_wo_version`): Terraform cannot diff a write-only value, and bumping the version triggers the Update that re-pushes the secret (rotation). Require it with a `ConfigValidator` whenever the secret is set, or changing the secret is a silent no-op (`vaultCredentialConfigValidator`).
+- In Create and Update, read them from `req.Config`, not the plan or state: `req.Config.GetAttribute(ctx, path.Root("headers_wo"), &v)`, nested via `path.Root("refresh").AtName("refresh_token")` (`anthropic_vault_credential`). Never write them to state or fill them from API responses.
+- Pair each with a normal `<name>_wo_version` Int64 stored in state (`headers_wo_version`): Terraform cannot diff a write-only value, and bumping the version triggers the Update that re-pushes the secret (rotation). Require it with a `ConfigValidator` whenever the secret is set, or changing the secret is a silent no-op (`telemetryDestinationConfigValidator`).
 - In Update, re-push the secret payload on any mutable-field diff, not only a version bump; otherwise a change to a non-secret field (e.g. `expires_at`) is dropped and Terraform reports an inconsistent result after apply. Mark truly immutable fields `RequiresReplace` so they never reach Update.
 
 ### Secrets the API returns once
