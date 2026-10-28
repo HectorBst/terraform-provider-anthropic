@@ -49,5 +49,5 @@ resource "anthropic_workspace_member" "example" {
 Import an existing workspace member using the composite ID `<workspace_id>:<user_id>`:
 
 ```shell
-terraform import anthropic_workspace_member.example ws_01abc123:user_01xyz789
+terraform import anthropic_workspace_member.example wrkspc_01abc123:user_01xyz789
 ```

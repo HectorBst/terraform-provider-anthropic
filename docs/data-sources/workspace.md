@@ -68,7 +68,7 @@ On Claude Platform on AWS (the provider's `aws` block), workspaces are read thro
 - `compartment_id` (String) Identifier of the workspace's encryption compartment.
 - `created_at` (String) RFC 3339 timestamp of when the workspace was created.
 - `data_residency` (Attributes) Data-residency configuration for the workspace. (see [below for nested schema](#nestedatt--data_residency))
-- `display_color` (String) Hex color code representing the workspace in the Anthropic Console.
+- `display_color` (String) Hex color code representing the workspace in the Claude Console.
 - `external_key_id` (String) ID (`ekey_...`) of the customer-managed encryption key (CMEK) configuration attached to the workspace (on Claude Platform on AWS, the AWS KMS key ARN), or null.
 - `inference_data_retention` (Attributes) Inference data retention setting reported by the API, or null if absent. (see [below for nested schema](#nestedatt--inference_data_retention))
 - `name` (String) Human-readable name for the workspace.

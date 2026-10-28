@@ -221,14 +221,19 @@ func (r *SkillVersionResource) Delete(ctx context.Context, req resource.DeleteRe
 	}
 }
 
+// ImportState takes <skill_id>:<version>, the separator of the provider's other
+// composite import IDs, or <skill_id>/<version>, which it always accepted.
 func (r *SkillVersionResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	parts := strings.SplitN(req.ID, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		resp.Diagnostics.AddError("Invalid import ID", "Expected format: <skill_id>/<version>")
+	skillID, version, ok := strings.Cut(req.ID, ":")
+	if !ok {
+		skillID, version, ok = strings.Cut(req.ID, "/")
+	}
+	if !ok || skillID == "" || version == "" {
+		resp.Diagnostics.AddError("Invalid import ID", "Expected format: <skill_id>:<version> or <skill_id>/<version>")
 		return
 	}
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("skill_id"), parts[0])...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("version"), parts[1])...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("skill_id"), skillID)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("version"), version)...)
 }
 
 // ============================================================================

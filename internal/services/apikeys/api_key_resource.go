@@ -157,11 +157,11 @@ func (r *APIKeyResource) Metadata(_ context.Context, req resource.MetadataReques
 func (r *APIKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages an existing Anthropic API key via the Admin API. " +
-			"API keys must be created through the Anthropic Console — use `terraform import` to bring an existing key under Terraform management. " +
+			"API keys must be created through the Claude Console — use `terraform import` to bring an existing key under Terraform management. " +
 			"This resource supports renaming and deactivating existing keys. " +
 			"Requires `admin_api_key` (or `ANTHROPIC_ADMIN_API_KEY`) to be configured on the provider.\n\n" +
 			"> **Security note:** This resource manages API keys but never exposes the key material. " +
-			"The actual secret is only visible in the Anthropic Console at creation time. " +
+			"The actual secret is only visible in the Claude Console at creation time. " +
 			"Use this resource for lifecycle management of existing keys (rename, deactivate) only.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -292,7 +292,7 @@ func (r *APIKeyResource) Configure(_ context.Context, req resource.ConfigureRequ
 func (r *APIKeyResource) Create(_ context.Context, _ resource.CreateRequest, resp *resource.CreateResponse) {
 	resp.Diagnostics.AddError(
 		"API Key Creation Not Supported",
-		"API keys must be created via the Anthropic Console. "+
+		"API keys must be created via the Claude Console. "+
 			"Use `terraform import` to manage an existing key:\n\n"+
 			"  terraform import anthropic_api_key.<name> <api_key_id>",
 	)

@@ -112,7 +112,7 @@ func (r *EnvironmentResource) Metadata(_ context.Context, req resource.MetadataR
 
 func (r *EnvironmentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Creates and manages a cloud environment (container template) for Anthropic Managed Agent sessions (beta). " +
+		MarkdownDescription: "Creates and manages a Managed Agents environment: the cloud container template agent sessions run in (beta). " +
 			"Environments define the networking policy and pre-installed packages available to agent sessions.",
 		Attributes: map[string]schema.Attribute{
 			// --- Required ---

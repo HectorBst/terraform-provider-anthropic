@@ -73,7 +73,7 @@ func (d *WorkspaceDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 			},
 			"display_color": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Hex color code representing the workspace in the Anthropic Console.",
+				MarkdownDescription: "Hex color code representing the workspace in the Claude Console.",
 			},
 			"type": schema.StringAttribute{
 				Computed:            true,

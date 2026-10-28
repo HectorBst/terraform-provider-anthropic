@@ -2,13 +2,13 @@
 page_title: "anthropic_user_profile Resource - anthropic"
 subcategory: "User Profiles"
 description: |-
-  Creates and manages a user profile: an identity representing an end-user or resold-to company that a platform acts on behalf of when calling the API (beta).
+  Creates and manages an end-user profile, not an organization member: the identity of an end-user or resold-to company that a platform acts on behalf of when calling the API (beta).
 ---
 
 # anthropic_user_profile (Resource)
 
-Creates and manages a user profile (beta): an identity representing an end-user of a platform's product, or a
-resold-to company, on whose behalf the platform's API key calls the API.
+Creates and manages an end-user profile (beta), not an organization member: the identity of an end-user of a
+platform's product, or of a resold-to company, on whose behalf the platform's API key calls the API.
 
 > **API**: `POST/GET/POST/DELETE /v1/user_profiles[/{id}]` (beta).
 > **Auth**: Standard API key (`api_key` / `ANTHROPIC_API_KEY`).

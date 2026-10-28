@@ -63,8 +63,8 @@ func (r *UserProfileResource) Metadata(_ context.Context, req resource.MetadataR
 
 func (r *UserProfileResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Creates and manages a user profile (beta): an identity representing an end-user or resold-to " +
-			"company that a platform is acting on behalf of when calling the API. Not generally available for all " +
+		MarkdownDescription: "Creates and manages an end-user profile (beta), not an organization member: the identity of an end-user " +
+			"or resold-to company that a platform is acting on behalf of when calling the API. Not generally available for all " +
 			"organizations; the API returns `404` for organizations without this beta enabled. Destroying this " +
 			"resource deletes the profile at Anthropic (`DELETE /v1/user_profiles/{id}`); a profile that is " +
 			"already gone (`404`) is treated as deleted.",

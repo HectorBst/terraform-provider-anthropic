@@ -2,14 +2,14 @@
 page_title: "anthropic_api_key Resource - anthropic"
 subcategory: "Claude Console: Organization"
 description: |-
-  Manages an existing Anthropic API key (rename, deactivate) via the Admin API. Import only — keys must be created in the Anthropic Console.
+  Manages an existing Anthropic API key (rename, deactivate) via the Admin API. Import only — keys must be created in the Claude Console.
 ---
 
 # anthropic_api_key (Resource)
 
 Manages an existing Anthropic API key via the Admin API.
 
-API keys must be created through the Anthropic Console — use `terraform import` to bring an existing key under Terraform management. This resource supports renaming and deactivating existing keys.
+API keys must be created through the Claude Console — use `terraform import` to bring an existing key under Terraform management. This resource supports renaming and deactivating existing keys.
 
 Requires `admin_api_key` (or the `ANTHROPIC_ADMIN_API_KEY` environment variable) to be configured on the provider.
 
@@ -18,7 +18,7 @@ Requires `admin_api_key` (or the `ANTHROPIC_ADMIN_API_KEY` environment variable)
 > **Beta header**: None.
 > **Cost**: Free.
 
-> **Security note:** This resource manages API keys but never exposes the key material. The actual secret is only visible in the Anthropic Console at creation time. Use this resource for lifecycle management of existing keys (rename, deactivate) only.
+> **Security note:** This resource manages API keys but never exposes the key material. The actual secret is only visible in the Claude Console at creation time. Use this resource for lifecycle management of existing keys (rename, deactivate) only.
 
 > **Note on deletion:** Deleting this resource **deactivates** the API key (sets `status` to `inactive`) and removes it from state. The key is not permanently deleted, because the Anthropic API does not expose a delete operation for API keys.
 

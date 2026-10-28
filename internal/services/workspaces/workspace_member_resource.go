@@ -79,7 +79,7 @@ func (v noWorkspaceBillingValidator) ValidateString(_ context.Context, req valid
 			req.Path,
 			"Invalid workspace_role",
 			"The workspace_billing role cannot be assigned via this resource. "+
-				"Use the Anthropic Console to assign billing roles.",
+				"Use the Claude Console to assign billing roles.",
 		)
 	}
 }

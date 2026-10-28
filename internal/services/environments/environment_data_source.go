@@ -68,7 +68,7 @@ func (d *EnvironmentDataSource) Metadata(_ context.Context, req datasource.Metad
 
 func (d *EnvironmentDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Fetches a single Anthropic cloud environment by ID (beta).",
+		MarkdownDescription: "Fetches a single Managed Agents environment by ID (beta).",
 		Attributes: map[string]schema.Attribute{
 			"environment_id": schema.StringAttribute{
 				Required:            true,

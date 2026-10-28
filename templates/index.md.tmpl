@@ -33,7 +33,7 @@ Anthropic issues several kinds of keys, and each endpoint accepts only some of t
 
 Required for all inference resources: `anthropic_message`, `anthropic_agent`, `anthropic_skill`, models, token counting, etc.
 
-Generate one in the [Anthropic Console → API Keys](https://platform.claude.com/settings/keys). Scope it to the workspace the resources belong to: the provider sends no `anthropic-workspace-id` header, and the API rejects (`400`) a request from a key that is not scoped to a workspace when that header is missing ([Select a workspace](https://platform.claude.com/docs/en/manage-claude/authentication#select-a-workspace)).
+Generate one in the [Claude Console → API Keys](https://platform.claude.com/settings/keys). Scope it to the workspace the resources belong to: the provider sends no `anthropic-workspace-id` header, and the API rejects (`400`) a request from a key that is not scoped to a workspace when that header is missing ([Select a workspace](https://platform.claude.com/docs/en/manage-claude/authentication#select-a-workspace)).
 
 **Environment variable** (recommended):
 

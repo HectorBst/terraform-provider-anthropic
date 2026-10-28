@@ -135,8 +135,8 @@ func (r *MemoryResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *MemoryResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Creates and manages a memory: a single text document at a hierarchical path inside an " +
-			"`anthropic_memory_store` (beta). Updates are guarded by an optimistic-concurrency precondition on " +
+		MarkdownDescription: "Creates and manages a Managed Agents memory store document, which the API calls a memory: a single text " +
+			"document at a hierarchical path inside an `anthropic_memory_store` (beta). Updates are guarded by an optimistic-concurrency precondition on " +
 			"`content_sha256`: if the memory was modified out-of-band since the last read, the API returns a " +
 			"`memory_precondition_failed_error` (HTTP 409) and this provider surfaces it as an error rather than " +
 			"clobbering the remote content — run `terraform plan`/`refresh` to pick up the new content, then re-apply.",

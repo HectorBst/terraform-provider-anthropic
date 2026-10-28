@@ -63,7 +63,7 @@ func (r *OrganizationMemberResource) Schema(_ context.Context, _ resource.Schema
 		MarkdownDescription: "Manages an existing organization member (User) via the Admin API. " +
 			"Creating this resource looks up the configured user ID and adopts that existing member; it does not create organization membership. " +
 			"Adoption requires the configured role to match the member's current role; otherwise, import the member first to review the role change as an update. " +
-			"Membership must first be created by inviting a user (via `anthropic_invite` or the Anthropic Console) and having them accept. " +
+			"Membership must first be created by inviting a user (via `anthropic_invite` or the Claude Console) and having them accept. " +
 			"This resource supports changing a member's organization role and removing them from the organization. " +
 			"Destroy is blocked unless `remove_on_destroy = true` has been applied. **Warning:** When enabled, removing this resource from configuration and applying, or running `terraform destroy`, irreversibly removes the user's organization membership. There is no archive or deactivate alternative. " +
 			"Requires `admin_api_key` (or `ANTHROPIC_ADMIN_API_KEY`) to be configured on the provider.",

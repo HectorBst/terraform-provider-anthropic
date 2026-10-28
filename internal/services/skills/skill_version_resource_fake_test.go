@@ -68,8 +68,9 @@ func hclPaths(paths []string) []string {
 }
 
 // TestSkillVersionResource_lifecycle uploads a version of a skill, imports
-// it by <skill_id>/<version>, replaces it when its files change (files is
-// RequiresReplace) without touching the skill, and destroys both.
+// it by <skill_id>:<version> and by <skill_id>/<version>, replaces it when its
+// files change (files is RequiresReplace) without touching the skill, and
+// destroys both.
 func TestSkillVersionResource_lifecycle(t *testing.T) {
 	t.Parallel()
 	srv := newSkillsFake(t, 0)
@@ -91,9 +92,17 @@ func TestSkillVersionResource_lifecycle(t *testing.T) {
 				Config:            skillAndVersionConfig(skillFiles, v2),
 				ResourceName:      versionAddr,
 				ImportState:       true,
-				ImportStateIdFunc: importVersionID,
+				ImportStateIdFunc: importVersionID(":"),
 				ImportStateVerify: true,
 				// The API does not return the local paths.
+				ImportStateVerifyIgnore: []string{"files"},
+			},
+			{
+				Config:                  skillAndVersionConfig(skillFiles, v2),
+				ResourceName:            versionAddr,
+				ImportState:             true,
+				ImportStateIdFunc:       importVersionID("/"),
+				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"files"},
 			},
 			{
@@ -132,16 +141,20 @@ func TestSkillVersionResource_lifecycle(t *testing.T) {
 	}
 }
 
-func importVersionID(s *terraform.State) (string, error) {
-	rs, ok := s.RootModule().Resources[versionAddr]
-	if !ok {
-		return "", fmt.Errorf("%s not in state", versionAddr)
+// importVersionID returns the import ID of the version in the state: its
+// skill ID and version, joined by sep.
+func importVersionID(sep string) resource.ImportStateIdFunc {
+	return func(s *terraform.State) (string, error) {
+		rs, ok := s.RootModule().Resources[versionAddr]
+		if !ok {
+			return "", fmt.Errorf("%s not in state", versionAddr)
+		}
+		return rs.Primary.Attributes["skill_id"] + sep + rs.Primary.Attributes["version"], nil
 	}
-	return rs.Primary.Attributes["skill_id"] + "/" + rs.Primary.Attributes["version"], nil
 }
 
 // TestSkillVersionResource_importRejectsMalformedID: the import ID must be
-// <skill_id>/<version>, both parts non-empty.
+// <skill_id>:<version> or <skill_id>/<version>, both parts non-empty.
 func TestSkillVersionResource_importRejectsMalformedID(t *testing.T) {
 	t.Parallel()
 	srv := newSkillsFake(t, 0)
@@ -150,13 +163,14 @@ func TestSkillVersionResource_importRejectsMalformedID(t *testing.T) {
 	config := skillAndVersionConfig(skillFiles, v2)
 
 	steps := []resource.TestStep{{Config: config, ConfigPlanChecks: providertest.ExpectAction(versionAddr, plancheck.ResourceActionCreate)}}
-	for _, id := range []string{"no-separator", "/" + version(2), skillID(1) + "/"} {
+	for _, id := range []string{"no-separator", "/" + version(2), skillID(1) + "/", ":" + version(2), skillID(1) + ":"} {
 		steps = append(steps, resource.TestStep{
 			Config:        config,
 			ResourceName:  versionAddr,
 			ImportState:   true,
 			ImportStateId: id,
-			ExpectError:   regexp.MustCompile(`(?s)Invalid\s+import\s+ID.*Expected\s+format:\s+<skill_id>/<version>`),
+			ExpectError: regexp.MustCompile(
+				`(?s)Invalid\s+import\s+ID.*Expected\s+format:\s+<skill_id>:<version>\s+or\s+<skill_id>/<version>`),
 		})
 	}
 	resource.UnitTest(t, resource.TestCase{

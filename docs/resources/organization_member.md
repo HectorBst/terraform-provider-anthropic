@@ -9,7 +9,7 @@ description: |-
 
 Manages an existing organization member (User) via the Admin API.
 
-Terraform `Create` looks up the configured user ID and adopts that existing member; it does not create organization membership. The user must first be invited (via `anthropic_invite` or the Anthropic Console) and accept the invite. Adoption requires the configured role to match the member's current role; a mismatch returns an error without modifying the member. To change an existing member's role, first run `terraform import anthropic_organization_member.example <user_id>`, then run `terraform plan` to review the role change as an update before applying. The resource also supports changing a member's role and removing them from the organization.
+Terraform `Create` looks up the configured user ID and adopts that existing member; it does not create organization membership. The user must first be invited (via `anthropic_invite` or the Claude Console) and accept the invite. Adoption requires the configured role to match the member's current role; a mismatch returns an error without modifying the member. To change an existing member's role, first run `terraform import anthropic_organization_member.example <user_id>`, then run `terraform plan` to review the role change as an update before applying. The resource also supports changing a member's role and removing them from the organization.
 
 Requires `admin_api_key` (or the `ANTHROPIC_ADMIN_API_KEY` environment variable) to be configured on the provider.
 

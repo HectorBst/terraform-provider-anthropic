@@ -2,12 +2,12 @@
 page_title: "anthropic_environment Data Source - anthropic"
 subcategory: "Managed Agents"
 description: |-
-  Fetches a single Anthropic cloud environment by ID (beta).
+  Fetches a single Managed Agents environment by ID (beta).
 ---
 
 # anthropic_environment (Data Source)
 
-Fetches a single Anthropic cloud environment by ID (beta).
+Fetches a single Managed Agents environment by ID (beta).
 
 > **API**: `GET /v1/environments/{id}` (Managed Agents API).
 > **Auth**: Standard API key (`api_key` / `ANTHROPIC_API_KEY`).

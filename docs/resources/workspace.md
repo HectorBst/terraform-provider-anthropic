@@ -94,7 +94,7 @@ Not available with the provider's `google_cloud` block: on Claude Models on Goog
 - `archived_at` (String) RFC 3339 timestamp of when the workspace was archived, or null if it is active.
 - `compartment_id` (String) Identifier of the workspace's encryption compartment. Reference it in the KMS key policy when configuring CMEK on Claude Platform on AWS.
 - `created_at` (String) RFC 3339 timestamp of when the workspace was created.
-- `display_color` (String) Hex color code representing the workspace in the Anthropic Console.
+- `display_color` (String) Hex color code representing the workspace in the Claude Console.
 - `id` (String) Unique workspace identifier assigned by the API.
 - `inference_data_retention` (Attributes) Inference data retention setting reported by the API, or null if absent. Read-only. (see [below for nested schema](#nestedatt--inference_data_retention))
 - `type` (String) Object type. Always `workspace`.

@@ -2,12 +2,12 @@
 page_title: "anthropic_user_profile Data Source - anthropic"
 subcategory: "User Profiles"
 description: |-
-  Fetches a single user profile by ID.
+  Fetches a single end-user profile by ID, not an organization member.
 ---
 
 # anthropic_user_profile (Data Source)
 
-Fetches a single user profile by ID (beta). A user profile represents an end-user or resold-to company on whose behalf the API is used.
+Fetches a single end-user profile by ID (beta), not an organization member. A user profile represents an end-user or resold-to company on whose behalf the API is used.
 
 -> This beta is not generally available. As of 2026-09-30 the endpoint returns `404` for organizations that have not been enrolled.
 
