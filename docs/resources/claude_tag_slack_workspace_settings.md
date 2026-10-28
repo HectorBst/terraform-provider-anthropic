@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_claude_tag_slack_workspace_settings Resource - anthropic"
-subcategory: "Claude Enterprise"
+subcategory: "Claude Enterprise: Claude Tag"
 description: |-
   Manages the Claude Tag settings of a Slack workspace already connected in claude.ai.
 ---

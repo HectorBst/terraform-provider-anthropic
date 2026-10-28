@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_claude_tag_slack_channel Data Source - anthropic"
-subcategory: "Claude Enterprise"
+subcategory: "Claude Enterprise: Claude Tag"
 description: |-
   Reads the Claude Tag settings of one set-up Slack channel, by its Claude Tag ID or its Slack IDs.
 ---

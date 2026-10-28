@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_organization_members Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Members and Invites"
 description: |-
   Lists all members (Users) of the organization via the Admin API, with optional filtering by email.
 ---

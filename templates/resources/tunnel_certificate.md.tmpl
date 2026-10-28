@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_tunnel_certificate Resource - anthropic"
-subcategory: "Tunnels"
+subcategory: "MCP Tunnels"
 description: |-
   Registers a public CA certificate on an MCP tunnel (research preview).
 ---

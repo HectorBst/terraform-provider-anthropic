@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_claude_tag_bundle_target Resource - anthropic"
-subcategory: "Claude Enterprise"
+subcategory: "Claude Enterprise: Claude Tag"
 description: |-
   Attaches a Claude Tag Access bundle to a Slack channel or a Slack workspace.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_claude_tag_bundle Data Source - anthropic"
-subcategory: "Claude Enterprise"
+subcategory: "Claude Enterprise: Claude Tag"
 description: |-
   Reads one Claude Tag Access bundle of a Claude Enterprise organization by ID.
 ---

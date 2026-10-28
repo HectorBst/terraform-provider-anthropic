@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_invite Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Members and Invites"
 description: |-
   Fetches a single organization invite by ID via the Admin API.
 ---

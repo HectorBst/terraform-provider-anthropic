@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_workspace_member Resource - anthropic"
-subcategory: "Workspaces"
+subcategory: "Claude Console: Workspaces and Rate Limits"
 description: |-
   Assigns a user to an Anthropic Workspace with a given role via the Admin API.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_workspace_rate_limit Resource - anthropic"
-subcategory: "Workspaces"
+subcategory: "Claude Console: Workspaces and Rate Limits"
 description: |-
   Sets a workspace's rate-limit overrides for one rate-limit group via the Admin API.
 ---

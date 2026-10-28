@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_invite Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Members and Invites"
 description: |-
   Creates and manages an invitation for a user to join the organization via the Admin API.
 ---

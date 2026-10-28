@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_telemetry_destination Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Manages an OpenTelemetry destination that receives the traces of the organization's Messages API requests and Managed Agents sessions, via the Admin API.
 ---

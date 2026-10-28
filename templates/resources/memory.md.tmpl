@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_memory Resource - anthropic"
-subcategory: "Memory Stores"
+subcategory: "Managed Agents"
 description: |-
   Creates and manages a memory: a single text document at a hierarchical path inside an anthropic_memory_store (beta).
 ---

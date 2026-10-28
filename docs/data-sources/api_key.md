@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_api_key Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Fetches a single Anthropic API key by ID via the Admin API.
 ---

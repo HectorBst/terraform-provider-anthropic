@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_api_keys Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Lists Anthropic API keys via the Admin API, with optional filtering by status, workspace and creator.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_organization_member Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Members and Invites"
 description: |-
   Manages an existing organization member (User) via the Admin API. Terraform adopts the member by user ID; membership must already exist.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_invites Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Members and Invites"
 description: |-
   Lists all organization invites via the Admin API, with optional filtering by email and status.
 ---

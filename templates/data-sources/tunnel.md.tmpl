@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_tunnel Data Source - anthropic"
-subcategory: "Tunnels"
+subcategory: "MCP Tunnels"
 description: |-
   Retrieves an MCP tunnel by ID (research preview).
 ---

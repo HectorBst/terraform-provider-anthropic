@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_external_keys Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Lists the customer-managed encryption keys (CMEK) registered with the organization via the Admin API.
 ---

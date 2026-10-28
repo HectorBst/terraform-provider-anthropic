@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_rbac_group Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Enterprise: Groups"
 description: |-
   Manages an RBAC group of a Claude Enterprise organization via the Admin API.
 ---

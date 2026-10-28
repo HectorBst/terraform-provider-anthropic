@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_vaults Data Source - anthropic"
-subcategory: "Vaults"
+subcategory: "Managed Agents"
 description: |-
   Lists the vaults of the workspace (beta).
 ---

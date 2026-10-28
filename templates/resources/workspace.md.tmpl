@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_workspace Resource - anthropic"
-subcategory: "Workspaces"
+subcategory: "Claude Console: Workspaces and Rate Limits"
 description: |-
   Creates and manages an Anthropic Workspace via the Admin API.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_workspace Data Source - anthropic"
-subcategory: "Workspaces"
+subcategory: "Claude Console: Workspaces and Rate Limits"
 description: |-
   Fetches a single Anthropic Workspace by ID via the Admin API.
 ---

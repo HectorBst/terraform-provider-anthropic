@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_rbac_group Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Enterprise: Groups"
 description: |-
   Fetches an RBAC group of a Claude Enterprise organization by ID via the Admin API.
 ---

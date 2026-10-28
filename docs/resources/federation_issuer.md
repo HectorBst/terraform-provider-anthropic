@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_federation_issuer Resource - anthropic"
-subcategory: "Workload Identity Federation"
+subcategory: "Claude Console: Service Accounts and Federation"
 description: |-
   Registers an OIDC identity provider that Anthropic trusts for Workload Identity Federation (beta) in your organization.
 ---

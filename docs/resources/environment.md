@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_environment Resource - anthropic"
-subcategory: "Environments"
+subcategory: "Managed Agents"
 description: |-
   Creates and manages a cloud environment (container template) for Anthropic Managed Agent sessions (beta).
 ---

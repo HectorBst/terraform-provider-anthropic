@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_external_key Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Fetches a customer-managed encryption key (CMEK) registered with the organization, by ID, via the Admin API.
 ---

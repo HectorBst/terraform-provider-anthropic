@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_tunnels Data Source - anthropic"
-subcategory: "Tunnels"
+subcategory: "MCP Tunnels"
 description: |-
   Lists the MCP tunnels of a workspace (research preview).
 ---

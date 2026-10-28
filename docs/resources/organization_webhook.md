@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_organization_webhook Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Manages an organization webhook endpoint that receives events about enforcement actions on the organization's user profiles, via the Admin API.
 ---

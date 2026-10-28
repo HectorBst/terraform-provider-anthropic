@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_plugin Resource - anthropic"
-subcategory: "Claude Enterprise"
+subcategory: "Claude Enterprise: Plugins"
 description: |-
   Uploads an organization-owned plugin to a Claude Enterprise organization and chooses the version members are served.
 ---

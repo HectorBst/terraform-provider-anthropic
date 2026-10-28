@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_tunnel Resource - anthropic"
-subcategory: "Tunnels"
+subcategory: "MCP Tunnels"
 description: |-
   Creates and manages an MCP tunnel (research preview).
 ---

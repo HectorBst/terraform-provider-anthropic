@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_api_key Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Manages an existing Anthropic API key (rename, deactivate) via the Admin API. Import only — keys must be created in the Anthropic Console.
 ---

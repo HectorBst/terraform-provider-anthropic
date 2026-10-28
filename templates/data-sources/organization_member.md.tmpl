@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_organization_member Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Members and Invites"
 description: |-
   Fetches a single member (User) of the organization by user ID via the Admin API.
 ---

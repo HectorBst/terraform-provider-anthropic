@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_external_key Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Registers a customer-managed encryption key (CMEK) from AWS KMS, Google Cloud KMS or Azure Key Vault with the organization via the Admin API.
 ---

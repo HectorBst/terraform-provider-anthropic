@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_rbac_group_member Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Enterprise: Groups"
 description: |-
   Adds a user to an RBAC group of a Claude Enterprise organization via the Admin API.
 ---

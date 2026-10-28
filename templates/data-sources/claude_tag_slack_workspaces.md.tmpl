@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_claude_tag_slack_workspaces Data Source - anthropic"
-subcategory: "Claude Enterprise"
+subcategory: "Claude Enterprise: Claude Tag"
 description: |-
   Lists the Slack workspaces set up in Claude Tag, with what each stores or what applies in it.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_organization Data Source - anthropic"
-subcategory: "Organization"
+subcategory: "Claude Console: Organization"
 description: |-
   Fetches the organization associated with the authenticated Admin API key via the Admin API.
 ---

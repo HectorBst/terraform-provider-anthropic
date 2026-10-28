@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_environment Data Source - anthropic"
-subcategory: "Environments"
+subcategory: "Managed Agents"
 description: |-
   Fetches a single Anthropic cloud environment by ID (beta).
 ---

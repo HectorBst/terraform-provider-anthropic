@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_spend_limit Resource - anthropic"
-subcategory: "Organization"
+subcategory: "Spend Limits"
 description: |-
   Sets a spend limit (a cap on metered spend for one scope and period) via the Admin API.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_workspace_rate_limits Data Source - anthropic"
-subcategory: "Workspaces"
+subcategory: "Claude Console: Workspaces and Rate Limits"
 description: |-
   Lists a workspace's rate limits: its overrides by default, or every group with the values it inherits from the organization when include_inherited is true.
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_claude_tag_slack_channel Resource - anthropic"
-subcategory: "Claude Enterprise"
+subcategory: "Claude Enterprise: Claude Tag"
 description: |-
   Manages the Claude Tag settings of one Slack channel: whether Claude is on, its instructions, model, environment and guest policy.
 ---

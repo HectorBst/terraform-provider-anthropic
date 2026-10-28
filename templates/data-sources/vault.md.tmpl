@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_vault Data Source - anthropic"
-subcategory: "Vaults"
+subcategory: "Managed Agents"
 description: |-
   Retrieves a vault by ID (beta).
 ---

@@ -1,6 +1,6 @@
 ---
 page_title: "anthropic_vault_credential Resource - anthropic"
-subcategory: "Vaults"
+subcategory: "Managed Agents"
 description: |-
   Creates and manages a vault credential for Anthropic Managed Agents (beta).
 ---
