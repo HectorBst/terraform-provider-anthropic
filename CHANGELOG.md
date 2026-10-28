@@ -1,3 +1,9 @@
+## [1.62.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.61.1...v1.62.0) (2026-10-28)
+
+### ✨ Features
+
+* **organization-members:** adopt existing organization members on create ([#332](https://github.com/ippontech/terraform-provider-anthropic/issues/332)) ([8d108f5](https://github.com/ippontech/terraform-provider-anthropic/commit/8d108f59aaba059f313416a3b6f44072b319fe22)), closes [#330](https://github.com/ippontech/terraform-provider-anthropic/issues/330)
+
 ## [1.61.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.61.0...v1.61.1) (2026-10-28)
 
 ### 🐛 Bug Fixes
