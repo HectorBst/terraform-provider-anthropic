@@ -82,9 +82,13 @@ jobs:
       # With -format json, govulncheck exits 0 whatever it finds (and non-zero
       # on an error, which fails the step). A finding is reachable when the
       # first frame of its trace names a function, the rule its text output
-      # applies. The base is scanned with GOTOOLCHAIN=auto: the newer of this
-      # Go and the base's own toolchain line, so a change that lowers the
-      # toolchain still shows the standard-library findings it brings in.
+      # applies. Each tree is scanned with the Go its own go.mod names (the
+      # head through setup-go, the base through GOTOOLCHAIN): its toolchain
+      # line, else its go line. Standard-library findings then match each
+      # side's Go, so a change that raises or lowers the toolchain shows the
+      # ones it brings in. go downloads the base's Go as the
+      # golang.org/toolchain module, from proxy.golang.org (sum.golang.org
+      # checks it).
       - name: Run govulncheck on the change and on its base
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         shell: bash
@@ -100,9 +104,21 @@ jobs:
             jq -rn --arg id "$1" '[inputs | select(.osv.id == $id) | .osv.summary // ""][0] // "" | gsub("%"; "%25") | gsub("[\r\n]+"; " ")' "${out}/head.json" "${out}/base.json"
           }
 
+          # A go line with a language version (go 1.26) means its first
+          # release (go1.26.0); GOTOOLCHAIN only takes a release.
+          base_go=$(awk '$1 == "toolchain" { print $2; exit }' .govulncheck-base/go.mod || true)
+          if [ -z "${base_go}" ]; then
+            base_go="go$(awk '$1 == "go" { print $2; exit }' .govulncheck-base/go.mod || true)"
+            if [[ "${base_go}" =~ ^go1\.[0-9]+$ ]]; then
+              base_go="${base_go}.0"
+            fi
+          fi
+          echo "Scanning the change with $(go env GOVERSION) and its base with ${base_go}."
+
           govulncheck -format json ./... > "${out}/head.json"
-          if ! (cd .govulncheck-base && GOTOOLCHAIN=auto govulncheck -format json ./... > "${out}/base.json"); then
-            echo "::warning::govulncheck could not scan the base branch, so every finding counts as new."
+          if ! [[ "${base_go}" =~ ^go1\.[0-9] ]] ||
+            ! (cd .govulncheck-base && GOTOOLCHAIN="${base_go}" govulncheck -format json ./... > "${out}/base.json"); then
+            echo "::warning::govulncheck could not scan the base branch with ${base_go}, so every finding counts as new."
             : > "${out}/base.json"
           fi
 
