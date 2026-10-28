@@ -23,14 +23,20 @@ jobs:
       # sum.golang.org: `go install <pkg>@<version>` verifies the downloaded
       # modules against the checksum database, which proxy.golang.org does not
       # mirror. vuln.go.dev: the vulnerability database govulncheck queries.
+      # raw.githubusercontent.com: setup-go's manifest when the API call fails.
+      # go.dev, dl.google.com: its fallback when the toolchain is not in that
+      # manifest yet (go.dev/dl, whose downloads redirect to dl.google.com).
       - name: Harden runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           allowed-endpoints: >
             api.github.com:443
+            dl.google.com:443
             github.com:443
+            go.dev:443
             proxy.golang.org:443
+            raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
