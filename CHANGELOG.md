@@ -1,3 +1,9 @@
+## [1.61.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.61.0...v1.61.1) (2026-10-28)
+
+### 🐛 Bug Fixes
+
+* **invite:** retain completed organization invites in state ([#330](https://github.com/ippontech/terraform-provider-anthropic/issues/330)) ([6d8bed8](https://github.com/ippontech/terraform-provider-anthropic/commit/6d8bed89afa087d7afb5cf88f43c794632c60f56))
+
 ## [1.61.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.60.0...v1.61.0) (2026-10-13)
 
 ### ✨ Features
