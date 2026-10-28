@@ -6,6 +6,9 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -13,8 +16,15 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	"github.com/ippontech/terraform-provider-anthropic/internal/oauthtest"
+	"github.com/ippontech/terraform-provider-anthropic/internal/schematest"
 )
 
 // TestMapAgentResponseToState_customToolInputSchema is a regression test for the
@@ -55,7 +65,7 @@ func TestMapAgentResponseToState_customToolInputSchema(t *testing.T) {
 	}
 
 	var data AgentResourceModel
-	if diags := mapAgentResponseToState(context.Background(), &agent, &data); diags.HasError() {
+	if diags := mapAgentResponseToState(context.Background(), &agent, &data, applyMapping); diags.HasError() {
 		t.Fatalf("mapAgentResponseToState returned errors: %+v", diags)
 	}
 
@@ -335,7 +345,7 @@ func TestMapMCPToolsetsToState_outOfBandConfigOnNullConfigs(t *testing.T) {
 		"default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}},
 		"configs":[{"name":"delete_record","enabled":true,"permission_policy":{"type":"always_allow"}}]}]`)
 
-	if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	toolsets := mcpToolsetsFromState(t, data)
@@ -366,7 +376,7 @@ func TestMapMCPToolsetsToState_outOfBandToolset(t *testing.T) {
 		{"type":"mcp_toolset","mcp_server_name":"billing","default_config":{"enabled":true,"permission_policy":{"type":"always_allow"}}},
 		{"type":"mcp_toolset","mcp_server_name":"crm","default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}}}]`)
 
-	if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	toolsets := mcpToolsetsFromState(t, data)
@@ -420,7 +430,7 @@ func TestMapToolConfigsToState_unsetFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			list, diags := mapToolConfigsToState(context.Background(), current, tt.api, true, "always_ask", agentMCPToolConfigAttrTypes)
+			list, diags := mapToolConfigsToState(context.Background(), current, tt.api, true, "always_ask", agentMCPToolConfigAttrTypes, readMapping)
 			if diags.HasError() {
 				t.Fatalf("diags: %+v", diags)
 			}
@@ -451,7 +461,7 @@ func TestMapToolConfigsToState_trackedAndExtra(t *testing.T) {
 		{name: "bash", enabled: true, permissionPolicy: "always_ask"},
 	}
 
-	list, diags := mapToolConfigsToState(context.Background(), current, api, true, "always_allow", agentToolConfigAttrTypes)
+	list, diags := mapToolConfigsToState(context.Background(), current, api, true, "always_allow", agentToolConfigAttrTypes, readMapping)
 	if diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
@@ -485,7 +495,7 @@ func TestMapAgentToolsetToState_outOfBandConfig(t *testing.T) {
 		"default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}},
 		"configs":[{"type":"bash","name":"bash","enabled":true,"permission_policy":{"type":"always_allow"}}]}]`)
 
-	if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	var toolset agentToolsetModel
@@ -510,7 +520,7 @@ func TestMapMCPToolsetsToState_import(t *testing.T) {
 		"default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}},
 		"configs":[{"name":"search","enabled":true,"permission_policy":{"type":"always_ask"}}]}]`)
 
-	if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
 	toolsets := mcpToolsetsFromState(t, data)
@@ -520,6 +530,241 @@ func TestMapMCPToolsetsToState_import(t *testing.T) {
 	configs := toolConfigsFromList(t, toolsets[0].Configs)
 	if len(configs) != 1 || !configs[0].Enabled.Equal(types.BoolValue(true)) || configs[0].PermissionPolicy.ValueString() != "always_ask" {
 		t.Errorf("got configs %+v, want the API config verbatim", configs)
+	}
+}
+
+// unplannedTools holds tool settings that unplannedToolsPlan does not have:
+// per-tool configs for agent_toolset, planned without `configs`; on crm, unset
+// fields the API resolves to a value other than the toolset default (search's
+// permission_policy, lookup's enabled) and a config for an unplanned tool
+// (delete); a toolset for an unplanned server (billing). mcp_servers is left
+// out: the tool mapping does not read it.
+const unplannedTools = `[
+	{"type":"agent_toolset_20260401","default_config":{"enabled":false,"permission_policy":{"type":"always_allow"}},
+		"configs":[{"name":"bash","enabled":true,"permission_policy":{"type":"always_ask"}}]},
+	{"type":"mcp_toolset","mcp_server_name":"crm","default_config":{"enabled":false,"permission_policy":{"type":"always_allow"}},
+		"configs":[
+			{"name":"search","enabled":true,"permission_policy":{"type":"always_ask"}},
+			{"name":"lookup","enabled":true,"permission_policy":{"type":"always_ask"}},
+			{"name":"delete","enabled":true,"permission_policy":{"type":"always_allow"}}]},
+	{"type":"mcp_toolset","mcp_server_name":"billing","default_config":{"enabled":true,"permission_policy":{"type":"always_allow"}}}]`
+
+// unplannedToolsPlan plans agent as it is, except for the tools.
+func unplannedToolsPlan(t *testing.T, agent *anthropic.BetaManagedAgentsAgent) AgentResourceModel {
+	t.Helper()
+	toolset, diags := types.ObjectValue(agentToolsetAttrTypes, map[string]attr.Value{
+		"default_enabled":           types.BoolValue(false),
+		"default_permission_policy": types.StringValue("always_allow"),
+		"configs":                   types.ListNull(types.ObjectType{AttrTypes: agentToolConfigAttrTypes}),
+	})
+	if diags.HasError() {
+		t.Fatalf("build agent_toolset: %+v", diags)
+	}
+	return AgentResourceModel{
+		Model:        types.StringValue(string(agent.Model.ID)),
+		Name:         types.StringValue(agent.Name),
+		Metadata:     types.MapNull(types.StringType),
+		MCPServers:   types.ListNull(types.ObjectType{AttrTypes: agentMCPServerAttrTypes}),
+		Skills:       types.ListNull(types.ObjectType{AttrTypes: agentSkillAttrTypes}),
+		CustomTools:  types.ListNull(types.ObjectType{AttrTypes: agentCustomToolAttrTypes}),
+		Multiagent:   types.ObjectNull(agentMultiagentAttrTypes),
+		AgentToolset: toolset,
+		MCPToolsets: mcpToolsetsList(t, agentMCPToolsetModel{
+			MCPServerName:           types.StringValue("crm"),
+			DefaultEnabled:          types.BoolValue(false),
+			DefaultPermissionPolicy: types.StringValue("always_allow"),
+			Configs: toolConfigsList(t, agentMCPToolConfigAttrTypes,
+				agentToolConfigModel{Name: types.StringValue("search"), Enabled: types.BoolValue(true), PermissionPolicy: types.StringNull()},
+				agentToolConfigModel{Name: types.StringValue("lookup"), Enabled: types.BoolNull(), PermissionPolicy: types.StringValue("always_ask")},
+			),
+		}),
+	}
+}
+
+// Create and Update must store the planned tools: `configs` and `mcp_toolsets`
+// are not Computed, so Terraform rejects any other value as "Provider produced
+// inconsistent result after apply". Read, given the same response, must still
+// report every unplanned setting so that it shows as drift.
+func TestAgentResource_unplannedToolSettings(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	agent := parseAgentWithTools(t, unplannedTools)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, agent.RawJSON())
+	}))
+	t.Cleanup(srv.Close)
+	r := &AgentResource{client: oauthtest.NewSDKClient(t, srv)}
+	sch := schematest.ResourceSchema(t, r)
+
+	planned := unplannedToolsPlan(t, agent)
+	plan := tfsdk.Plan{Schema: sch}
+	if diags := plan.Set(ctx, &planned); diags.HasError() {
+		t.Fatalf("set plan: %+v", diags)
+	}
+	prior := planned
+	prior.ID = types.StringValue(agent.ID)
+	prior.Version = types.Int64Value(agent.Version)
+	state := tfsdk.State{Schema: sch}
+	if diags := state.Set(ctx, &prior); diags.HasError() {
+		t.Fatalf("set state: %+v", diags)
+	}
+
+	stateModel := func(t *testing.T, s tfsdk.State) AgentResourceModel {
+		t.Helper()
+		var data AgentResourceModel
+		if diags := s.Get(ctx, &data); diags.HasError() {
+			t.Fatalf("get state: %+v", diags)
+		}
+		return data
+	}
+	wantPlannedTools := func(t *testing.T, s tfsdk.State) {
+		t.Helper()
+		data := stateModel(t, s)
+		if !data.AgentToolset.Equal(planned.AgentToolset) {
+			t.Errorf("agent_toolset = %s\nplanned:        %s", data.AgentToolset, planned.AgentToolset)
+		}
+		if !data.MCPToolsets.Equal(planned.MCPToolsets) {
+			t.Errorf("mcp_toolsets = %s\nplanned:       %s", data.MCPToolsets, planned.MCPToolsets)
+		}
+	}
+
+	t.Run("create keeps the plan", func(t *testing.T) {
+		t.Parallel()
+		resp := &resource.CreateResponse{State: tfsdk.State{Schema: sch}}
+		r.Create(ctx, resource.CreateRequest{Plan: plan}, resp)
+		if resp.Diagnostics.HasError() {
+			t.Fatalf("create: %+v", resp.Diagnostics)
+		}
+		wantPlannedTools(t, resp.State)
+	})
+
+	t.Run("update keeps the plan", func(t *testing.T) {
+		t.Parallel()
+		resp := &resource.UpdateResponse{State: tfsdk.State{Schema: sch}}
+		r.Update(ctx, resource.UpdateRequest{Plan: plan, State: state}, resp)
+		if resp.Diagnostics.HasError() {
+			t.Fatalf("update: %+v", resp.Diagnostics)
+		}
+		wantPlannedTools(t, resp.State)
+	})
+
+	t.Run("read reports the drift", func(t *testing.T) {
+		t.Parallel()
+		resp := &resource.ReadResponse{State: state}
+		r.Read(ctx, resource.ReadRequest{State: state}, resp)
+		if resp.Diagnostics.HasError() {
+			t.Fatalf("read: %+v", resp.Diagnostics)
+		}
+		data := stateModel(t, resp.State)
+
+		var toolset agentToolsetModel
+		if diags := data.AgentToolset.As(ctx, &toolset, basetypes.ObjectAsOptions{}); diags.HasError() {
+			t.Fatalf("read agent_toolset: %+v", diags)
+		}
+		if got := toolConfigsFromList(t, toolset.Configs); len(got) != 1 || got[0].Name.ValueString() != "bash" {
+			t.Errorf("agent_toolset.configs = %+v, want the bash config the API returns", got)
+		}
+		toolsets := mcpToolsetsFromState(t, data)
+		if len(toolsets) != 2 || toolsets[1].MCPServerName.ValueString() != "billing" {
+			t.Fatalf("mcp_toolsets = %+v, want crm, then the unplanned billing", toolsets)
+		}
+		crm := toolConfigsFromList(t, toolsets[0].Configs)
+		if len(crm) != 3 || crm[2].Name.ValueString() != "delete" {
+			t.Fatalf("crm configs = %+v, want search, lookup, then the unplanned delete", crm)
+		}
+		if crm[0].PermissionPolicy.ValueString() != "always_ask" {
+			t.Errorf("search.permission_policy = %s, want always_ask (differs from the toolset default)", crm[0].PermissionPolicy)
+		}
+		if !crm[1].Enabled.Equal(types.BoolValue(true)) {
+			t.Errorf("lookup.enabled = %s, want true (differs from the toolset default)", crm[1].Enabled)
+		}
+	})
+}
+
+// On Create and Update an mcp_toolsets list the plan leaves out stays null even
+// if the API returns a toolset; Read (here, import) reports it.
+func TestMapMCPToolsetsToState_applyKeepsNullPlan(t *testing.T) {
+	t.Parallel()
+
+	agent := parseAgentWithTools(t, `[{"type":"mcp_toolset","mcp_server_name":"crm",
+		"default_config":{"enabled":true,"permission_policy":{"type":"always_allow"}}}]`)
+	for mode, wantNull := range map[mappingMode]bool{applyMapping: true, readMapping: false} {
+		data := AgentResourceModel{MCPToolsets: types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes})}
+		if diags := mapAgentResponseToState(context.Background(), agent, &data, mode); diags.HasError() {
+			t.Fatalf("mode %d: %+v", mode, diags)
+		}
+		if data.MCPToolsets.IsNull() != wantNull {
+			t.Errorf("mode %d: mcp_toolsets = %s, want null: %t", mode, data.MCPToolsets, wantNull)
+		}
+	}
+}
+
+// Two mcp_toolsets entries for the same server fail at plan time: state keeps
+// one entry per server, so the apply would end in an inconsistent result.
+func TestUniqueMCPServerNamesValidator(t *testing.T) {
+	t.Parallel()
+
+	a, ok := schematest.ResourceSchema(t, NewAgentResource()).Attributes["mcp_toolsets"].(interface{ ListValidators() []validator.List })
+	if !ok {
+		t.Fatal("mcp_toolsets is not a list attribute")
+	}
+	wired := false
+	for _, v := range a.ListValidators() {
+		_, isUnique := v.(uniqueMCPServerNamesValidator)
+		wired = wired || isUnique
+	}
+	if !wired {
+		t.Error("mcp_toolsets does not use uniqueMCPServerNamesValidator")
+	}
+
+	elemType := types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}
+	toolset := func(name types.String) attr.Value {
+		return types.ObjectValueMust(agentMCPToolsetAttrTypes, map[string]attr.Value{
+			"mcp_server_name":           name,
+			"default_enabled":           types.BoolNull(),
+			"default_permission_policy": types.StringNull(),
+			"configs":                   types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes}),
+		})
+	}
+	tests := []struct {
+		name     string
+		value    types.List
+		wantPath string // path of the expected error; empty when none is expected
+	}{
+		{name: "null", value: types.ListNull(elemType)},
+		{name: "distinct, with unknown values", value: types.ListValueMust(elemType, []attr.Value{
+			toolset(types.StringValue("crm")), toolset(types.StringUnknown()), types.ObjectUnknown(agentMCPToolsetAttrTypes), toolset(types.StringValue("billing")),
+		})},
+		{name: "duplicate", value: types.ListValueMust(elemType, []attr.Value{
+			toolset(types.StringValue("crm")), toolset(types.StringValue("billing")), toolset(types.StringValue("crm")),
+		}), wantPath: "mcp_toolsets[2].mcp_server_name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			resp := &validator.ListResponse{}
+			uniqueMCPServerNamesValidator{}.ValidateList(context.Background(),
+				validator.ListRequest{Path: path.Root("mcp_toolsets"), ConfigValue: tt.value}, resp)
+			if tt.wantPath == "" {
+				if resp.Diagnostics.HasError() {
+					t.Fatalf("unexpected diagnostics: %+v", resp.Diagnostics)
+				}
+				return
+			}
+			if resp.Diagnostics.ErrorsCount() != 1 {
+				t.Fatalf("got %+v, want one error", resp.Diagnostics)
+			}
+			d := resp.Diagnostics.Errors()[0]
+			withPath, ok := d.(diag.DiagnosticWithPath)
+			if !ok || withPath.Path().String() != tt.wantPath {
+				t.Errorf("error %+v, want it on %s", d, tt.wantPath)
+			}
+			if !strings.Contains(d.Detail(), `"crm" is set in entries 0 and 2`) {
+				t.Errorf("detail = %q, want it to name the server and both entries", d.Detail())
+			}
+		})
 	}
 }
 
@@ -602,7 +847,7 @@ func TestMapAgentResponseToState_modelEffortAndGeo(t *testing.T) {
 		t.Parallel()
 		data := AgentResourceModel{ModelEffort: types.StringUnknown()}
 		agent := parseAgentFixture(t, `{"id":"claude-sonnet-4-6","effort":{"type":"xhigh"},"inference_geo":"us"}`)
-		if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+		if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 			t.Fatalf("diags: %+v", diags)
 		}
 		if data.ModelEffort.ValueString() != "xhigh" || data.ModelInferenceGeo.ValueString() != "us" {
@@ -614,7 +859,7 @@ func TestMapAgentResponseToState_modelEffortAndGeo(t *testing.T) {
 		t.Parallel()
 		data := AgentResourceModel{ModelEffort: types.StringUnknown()}
 		agent := parseAgentFixture(t, `{"id":"claude-sonnet-4-6"}`)
-		if diags := mapAgentResponseToState(context.Background(), agent, &data); diags.HasError() {
+		if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 			t.Fatalf("diags: %+v", diags)
 		}
 		if !data.ModelEffort.IsNull() || !data.ModelInferenceGeo.IsNull() {
@@ -629,7 +874,7 @@ func TestMapAgentResponseToState_modelEffortAndGeo(t *testing.T) {
 			`{"id":"claude-sonnet-4-6","inference_geo":null}`,
 		} {
 			data := AgentResourceModel{}
-			if diags := mapAgentResponseToState(context.Background(), parseAgentFixture(t, model), &data); diags.HasError() {
+			if diags := mapAgentResponseToState(context.Background(), parseAgentFixture(t, model), &data, readMapping); diags.HasError() {
 				t.Fatalf("diags: %+v", diags)
 			}
 			if !data.ModelEffort.IsNull() || !data.ModelInferenceGeo.IsNull() {
