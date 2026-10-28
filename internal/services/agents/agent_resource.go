@@ -983,6 +983,11 @@ const (
 	// the plan lacks is added, and a per-tool field the plan leaves null stays
 	// null; a value the API holds beyond the plan shows on the next Read.
 	applyMapping
+	// importMapping is readMapping for a toolset state does not hold yet (import,
+	// or a toolset added out of band). The tool mappers pick it themselves: with
+	// no prior configs to compare against, every per-tool config is mapped
+	// verbatim, so a configuration that lists one matches state after import.
+	importMapping
 )
 
 // mapAgentResponseToState maps the API response to the Terraform state model.
@@ -1169,8 +1174,13 @@ type apiToolConfig struct {
 //     override `default_config`), so an echoed default causes no perpetual diff
 //     and a diverging value does.
 //
-// A null current (no configs block, or import) maps every other API config
-// verbatim, and stays null when there is none.
+// A null current (a toolset state holds without a configs block) maps every
+// other API config verbatim, and stays null when there is none.
+//
+// With importMapping (a toolset state does not hold yet: import, or one added
+// out of band) current is null and every API config is mapped verbatim, the
+// ones equal to the defaults included: there is no configuration to tell them
+// apart from, and a configuration that lists one must match state after import.
 //
 // With applyMapping (Create, Update) a null current stays null, configs for
 // other tools are not appended and a field the plan leaves null stays null:
@@ -1223,7 +1233,7 @@ func mapToolConfigsToState(ctx context.Context, current types.List, apiConfigs [
 
 	for _, c := range apiConfigs {
 		isDefault := c.enabled == defaultEnabled && c.permissionPolicy == defaultPolicy
-		if mode == applyMapping || tracked[c.name] || isDefault {
+		if mode == applyMapping || tracked[c.name] || (isDefault && mode == readMapping) {
 			continue
 		}
 		tracked[c.name] = true
@@ -1245,7 +1255,8 @@ func mapToolConfigsToState(ctx context.Context, current types.List, apiConfigs [
 }
 
 // mapAgentToolsetToState maps the API agent toolset response to a Terraform object.
-// Per-tool configs go through mapToolConfigsToState, so out-of-band overrides show up on Read.
+// Per-tool configs go through mapToolConfigsToState, so out-of-band overrides show up on Read;
+// with no toolset in state (import), they are mapped with importMapping.
 func mapAgentToolsetToState(ctx context.Context, apiToolset *anthropic.BetaManagedAgentsAgentToolset20260401, currentState types.Object, mode mappingMode) (types.Object, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
@@ -1260,6 +1271,8 @@ func mapAgentToolsetToState(ctx context.Context, apiToolset *anthropic.BetaManag
 			return types.ObjectNull(agentToolsetAttrTypes), diags
 		}
 		currentConfigs = stateToolset.Configs
+	} else if mode == readMapping {
+		mode = importMapping
 	}
 
 	apiConfigs := make([]apiToolConfig, 0, len(apiToolset.Configs))
@@ -1290,9 +1303,9 @@ func mapAgentToolsetToState(ctx context.Context, apiToolset *anthropic.BetaManag
 // mapMCPToolsetsToState maps API MCP toolsets to a Terraform list, matching by server name.
 // Toolsets tracked in current state come first, in state order; on Read a toolset the API
 // returns for any other server is appended in API order, so a toolset added out of band
-// surfaces as a plan diff and is removed on apply. With applyMapping (Create, Update) only
-// planned toolsets are mapped, and a null plan stays null. Per-tool configs go through
-// mapToolConfigsToState.
+// surfaces as a plan diff and is removed on apply; its per-tool configs (as on import) are
+// mapped with importMapping. With applyMapping (Create, Update) only planned toolsets are
+// mapped, and a null plan stays null. Per-tool configs go through mapToolConfigsToState.
 func mapMCPToolsetsToState(ctx context.Context, apiToolsets []anthropic.BetaManagedAgentsMCPToolset, currentState types.List, mode mappingMode) (types.List, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	if mode == applyMapping && currentState.IsNull() {
@@ -1314,7 +1327,7 @@ func mapMCPToolsetsToState(ctx context.Context, apiToolsets []anthropic.BetaMana
 
 	toolsetObjs := make([]attr.Value, 0, len(apiToolsets))
 	mapped := make(map[string]bool, len(apiToolsets))
-	appendToolset := func(apiToolset anthropic.BetaManagedAgentsMCPToolset, currentConfigs types.List) {
+	appendToolset := func(apiToolset anthropic.BetaManagedAgentsMCPToolset, currentConfigs types.List, configsMode mappingMode) {
 		mapped[apiToolset.MCPServerName] = true
 
 		apiConfigs := make([]apiToolConfig, 0, len(apiToolset.Configs))
@@ -1326,7 +1339,7 @@ func mapMCPToolsetsToState(ctx context.Context, apiToolsets []anthropic.BetaMana
 			})
 		}
 		configsList, d := mapToolConfigsToState(ctx, currentConfigs, apiConfigs,
-			apiToolset.DefaultConfig.Enabled, apiToolset.DefaultConfig.PermissionPolicy.Type, agentMCPToolConfigAttrTypes, mode)
+			apiToolset.DefaultConfig.Enabled, apiToolset.DefaultConfig.PermissionPolicy.Type, agentMCPToolConfigAttrTypes, configsMode)
 		diags.Append(d...)
 
 		obj, d := types.ObjectValue(agentMCPToolsetAttrTypes, map[string]attr.Value{
@@ -1345,13 +1358,13 @@ func mapMCPToolsetsToState(ctx context.Context, apiToolsets []anthropic.BetaMana
 		if !exists || mapped[serverName] {
 			continue
 		}
-		appendToolset(apiToolset, st.Configs)
+		appendToolset(apiToolset, st.Configs, mode)
 	}
 	for _, apiToolset := range apiToolsets {
 		if mode == applyMapping || mapped[apiToolset.MCPServerName] {
 			continue
 		}
-		appendToolset(apiToolset, types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes}))
+		appendToolset(apiToolset, types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes}), importMapping)
 	}
 	if diags.HasError() {
 		return types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}), diags
