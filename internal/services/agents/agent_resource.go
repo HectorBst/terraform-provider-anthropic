@@ -1155,18 +1155,22 @@ type apiToolConfig struct {
 
 // mapToolConfigsToState maps a toolset's per-tool configs from the API into
 // state, against current: the prior state on Read, the plan on Create and
-// Update. On Read every config the API returns is represented, so an override
-// added out of band (a config for another tool, or a policy relaxed to
+// Update. On Read every config that changes something is represented, so an
+// override added out of band (a config for another tool, or a policy relaxed to
 // `always_allow`) shows up as a plan diff instead of being dropped:
 //   - configs tracked in current come first, in their order; a tracked config
 //     the API no longer returns is omitted, so it is re-created on apply;
-//   - configs the API returns for any other tool are appended in API order;
+//   - configs the API returns for any other tool are appended in API order,
+//     except one whose `enabled` and `permission_policy` both equal the toolset
+//     defaults: it changes nothing, and if the API lists such configs for tools
+//     never configured, reporting them would leave a diff that never clears;
 //   - a field the configuration left unset stays null only while the API value
 //     equals the toolset default it inherits (the docs: per-tool configs
 //     override `default_config`), so an echoed default causes no perpetual diff
 //     and a diverging value does.
 //
-// A null current (no configs block, or import) maps every API config verbatim.
+// A null current (no configs block, or import) maps every other API config
+// verbatim, and stays null when there is none.
 //
 // With applyMapping (Create, Update) a null current stays null, configs for
 // other tools are not appended and a field the plan leaves null stays null:
@@ -1218,7 +1222,8 @@ func mapToolConfigsToState(ctx context.Context, current types.List, apiConfigs [
 	}
 
 	for _, c := range apiConfigs {
-		if mode == applyMapping || tracked[c.name] {
+		isDefault := c.enabled == defaultEnabled && c.permissionPolicy == defaultPolicy
+		if mode == applyMapping || tracked[c.name] || isDefault {
 			continue
 		}
 		tracked[c.name] = true
@@ -1229,6 +1234,9 @@ func mapToolConfigsToState(ctx context.Context, current types.List, apiConfigs [
 		})
 		diags.Append(d...)
 		configObjs = append(configObjs, obj)
+	}
+	if len(configObjs) == 0 && (current.IsNull() || current.IsUnknown()) {
+		return types.ListNull(elemType), diags
 	}
 
 	list, d := types.ListValue(elemType, configObjs)

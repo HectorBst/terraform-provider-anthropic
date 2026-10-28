@@ -461,7 +461,7 @@ func TestMapToolConfigsToState_trackedAndExtra(t *testing.T) {
 		{name: "bash", enabled: true, permissionPolicy: "always_ask"},
 	}
 
-	list, diags := mapToolConfigsToState(context.Background(), current, api, true, "always_allow", agentToolConfigAttrTypes, readMapping)
+	list, diags := mapToolConfigsToState(context.Background(), current, api, true, "always_ask", agentToolConfigAttrTypes, readMapping)
 	if diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
@@ -474,6 +474,71 @@ func TestMapToolConfigsToState_trackedAndExtra(t *testing.T) {
 	}
 	if !got[1].Enabled.Equal(types.BoolValue(true)) || got[1].PermissionPolicy.ValueString() != "always_allow" {
 		t.Errorf("extra config = %+v, want every field set from the API", got[1])
+	}
+}
+
+// On Read, a config for an untracked tool whose values both equal the toolset
+// defaults changes nothing, so it is skipped: if the API lists such configs, a
+// toolset without `configs` would otherwise keep a diff that never clears. A
+// config that differs from the defaults in either field is still reported.
+func TestMapToolConfigsToState_skipsUntrackedDefaults(t *testing.T) {
+	t.Parallel()
+
+	echoed := []apiToolConfig{
+		{name: "bash", enabled: true, permissionPolicy: "always_allow"},
+		{name: "read", enabled: true, permissionPolicy: "always_allow"},
+	}
+	overrides := []apiToolConfig{
+		{name: "web_fetch", enabled: true, permissionPolicy: "always_ask"},
+		{name: "grep", enabled: false, permissionPolicy: "always_allow"},
+	}
+	tests := []struct {
+		name    string
+		current types.List
+		api     []apiToolConfig
+		want    []string // config names in state; nil for a null list
+	}{
+		{
+			name:    "no configs block, only defaults listed",
+			current: types.ListNull(types.ObjectType{AttrTypes: agentToolConfigAttrTypes}),
+			api:     echoed,
+		},
+		{
+			name:    "no configs block, overrides among the defaults",
+			current: types.ListNull(types.ObjectType{AttrTypes: agentToolConfigAttrTypes}),
+			api:     append(append([]apiToolConfig{}, echoed...), overrides...),
+			want:    []string{"web_fetch", "grep"},
+		},
+		{
+			name: "tracked config, defaults listed for other tools",
+			current: toolConfigsList(t, agentToolConfigAttrTypes,
+				agentToolConfigModel{Name: types.StringValue("write"), Enabled: types.BoolValue(false), PermissionPolicy: types.StringNull()}),
+			api:  append([]apiToolConfig{{name: "write", enabled: false, permissionPolicy: "always_allow"}}, echoed...),
+			want: []string{"write"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			list, diags := mapToolConfigsToState(context.Background(), tt.current, tt.api, true, "always_allow", agentToolConfigAttrTypes, readMapping)
+			if diags.HasError() {
+				t.Fatalf("diags: %+v", diags)
+			}
+			if tt.want == nil {
+				if !list.IsNull() {
+					t.Fatalf("configs = %s, want null", list)
+				}
+				return
+			}
+			got := toolConfigsFromList(t, list)
+			names := make([]string, 0, len(got))
+			for _, c := range got {
+				names = append(names, c.Name.ValueString())
+			}
+			if strings.Join(names, ",") != strings.Join(tt.want, ",") {
+				t.Errorf("configs = %v, want %v", names, tt.want)
+			}
+		})
 	}
 }
 
@@ -508,7 +573,8 @@ func TestMapAgentToolsetToState_outOfBandConfig(t *testing.T) {
 	}
 }
 
-// Import (no prior state) still maps every toolset and config verbatim.
+// Import (no prior state) still maps every toolset verbatim, and every config
+// that differs from the toolset defaults (one that repeats them is skipped).
 func TestMapMCPToolsetsToState_import(t *testing.T) {
 	t.Parallel()
 
@@ -517,8 +583,10 @@ func TestMapMCPToolsetsToState_import(t *testing.T) {
 		MCPToolsets:  types.ListNull(types.ObjectType{AttrTypes: agentMCPToolsetAttrTypes}),
 	}
 	agent := parseAgentWithTools(t, `[{"type":"mcp_toolset","mcp_server_name":"crm",
-		"default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}},
-		"configs":[{"name":"search","enabled":true,"permission_policy":{"type":"always_ask"}}]}]`)
+		"default_config":{"enabled":true,"permission_policy":{"type":"always_allow"}},
+		"configs":[
+			{"name":"lookup","enabled":true,"permission_policy":{"type":"always_allow"}},
+			{"name":"search","enabled":true,"permission_policy":{"type":"always_ask"}}]}]`)
 
 	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
@@ -528,8 +596,9 @@ func TestMapMCPToolsetsToState_import(t *testing.T) {
 		t.Fatalf("got %d toolsets, want 1", len(toolsets))
 	}
 	configs := toolConfigsFromList(t, toolsets[0].Configs)
-	if len(configs) != 1 || !configs[0].Enabled.Equal(types.BoolValue(true)) || configs[0].PermissionPolicy.ValueString() != "always_ask" {
-		t.Errorf("got configs %+v, want the API config verbatim", configs)
+	if len(configs) != 1 || configs[0].Name.ValueString() != "search" ||
+		!configs[0].Enabled.Equal(types.BoolValue(true)) || configs[0].PermissionPolicy.ValueString() != "always_ask" {
+		t.Errorf("got configs %+v, want only the search override, verbatim", configs)
 	}
 }
 
