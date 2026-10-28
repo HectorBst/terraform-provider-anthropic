@@ -114,7 +114,7 @@ automerged `GitHub Actions` group there; only its release-workflow occurrence wa
 | `go 1.26.2` | Language version: the oldest Go that can build the module, and the `GODEBUG` defaults compiled into the binary | Never proposes an update, by design ([gomod manager docs](https://docs.renovatebot.com/modules/manager/gomod/#updating-of-go-mod-and-toolchain-directives)). Raise it by hand, deliberately |
 | `toolchain go1.26.10` | The Go release CI tests with and releases are built with: `actions/setup-go` reads it before the `go` directive | Proposes updates by default, inside the `Go dependencies` group. `osvVulnerabilityAlerts` matches it against the standard-library advisories; it skips the `go` directive |
 
-Updates of both lines, and of the modules marked `// indirect`, are committed as `fix(deps)`, like direct modules, so semantic-release publishes a patch release that carries them. The `:semanticPrefixFixDepsChoreOthers` preset of `config:recommended` would type them `chore(deps)`, which publishes nothing ([preset](https://docs.renovatebot.com/presets-default/#semanticprefixfixdepschoreothers), [dependency types](https://docs.renovatebot.com/modules/manager/gomod/#dependency-types)). The rule matches the root `go.mod` only (`matchFileNames`): `tools/go.mod` feeds `make generate` and is not linked into the binary, so its indirect updates stay `chore(deps)`.
+Updates of the `toolchain` line (dependency type `toolchain`), and of the modules marked `// indirect`, are committed as `fix(deps)`, like direct modules, so semantic-release publishes a patch release that carries them. The `:semanticPrefixFixDepsChoreOthers` preset of `config:recommended` would type them `chore(deps)`, which publishes nothing ([preset](https://docs.renovatebot.com/presets-default/#semanticprefixfixdepschoreothers), [dependency types](https://docs.renovatebot.com/modules/manager/gomod/#dependency-types)). The `go` line (dependency type `golang`) keeps the preset's `chore(deps)`; Renovate does not propose updates to it anyway (see the table above). The rule matches the root `go.mod` only (`matchFileNames`): `tools/go.mod` feeds `make generate` and is not linked into the binary, so its indirect updates stay `chore(deps)`.
 
 The `toolchain` line is what keeps the standard-library vulnerabilities out of the released binaries, so
 leave it in place: `go mod tidy` removes it as soon as it is not newer than the `go` directive.
@@ -151,8 +151,8 @@ Three consequences worth knowing:
   `major` updates while its current version is below v1.68.0 (`matchCurrentVersion`), since from `1.67.x`
   each of them is v1.68.0 or later; the other always disables `major` updates, a new major being the #192
   migration. A fix released in a `1.67.x` patch still gets its `[SECURITY]` PR; a fix released only in
-  v1.68.0 or later gets none, the `govulncheck` job reports it if the provider reaches the vulnerable
-  code, and it goes through #192.
+  v1.68.0 or later gets none, the weekly `govulncheck` run reports it if the provider reaches the
+  vulnerable code, and it goes through #192.
 
 Remove the cap as part of #192, once the API rename has shipped and the migration is written, never on
 its own. The `minor` rule stops matching by itself once the SDK is at v1.68.0 or later.
