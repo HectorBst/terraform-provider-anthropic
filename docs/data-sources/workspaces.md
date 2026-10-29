@@ -24,15 +24,21 @@ output "workspaces_count" {
   value       = length(data.anthropic_workspaces.all.workspaces)
 }
 
-# The Default Workspace is listed only on request. Its ID is what API keys
-# bound to it report in scope.workspace_id.
+# The Default Workspace is listed only on request. The Admin API reports its
+# ID in the scope.workspace_id of the API keys bound to it (their workspace_id
+# is null).
 data "anthropic_workspaces" "with_default" {
   include_default = true
 }
 
+# The Default Workspace is the one workspace that only the second list holds.
+# Its name cannot tell it apart: another workspace may be named "Default" too.
 output "default_workspace_id" {
   description = "ID of the organization's Default Workspace."
-  value       = one([for ws in data.anthropic_workspaces.with_default.workspaces : ws.id if ws.name == "Default"])
+  value = one([
+    for ws in data.anthropic_workspaces.with_default.workspaces : ws.id
+    if !contains(data.anthropic_workspaces.all.workspaces[*].id, ws.id)
+  ])
 }
 ```
 
@@ -42,7 +48,7 @@ output "default_workspace_id" {
 ### Optional
 
 - `include_archived` (Boolean) When true, archived workspaces are included in the results.
-- `include_default` (Boolean) When true, the organization's Default Workspace is included in the results (the API leaves it out by default). It is the only way to get the Default Workspace's ID, which API keys report in `scope.workspace_id`.
+- `include_default` (Boolean) When true, the organization's Default Workspace is included in the results (the API leaves it out by default). It is the only way to get the Default Workspace's ID, which the Admin API reports in an API key's `scope.workspace_id` (the key's `workspace_id` is null for a key in the Default Workspace).
 
 ### Read-Only
 

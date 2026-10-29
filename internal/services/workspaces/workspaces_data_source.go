@@ -81,7 +81,8 @@ func (d *WorkspacesDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 			"include_default": schema.BoolAttribute{
 				Optional: true,
 				MarkdownDescription: "When true, the organization's Default Workspace is included in the results (the API leaves it out by default). " +
-					"It is the only way to get the Default Workspace's ID, which API keys report in `scope.workspace_id`.",
+					"It is the only way to get the Default Workspace's ID, which the Admin API reports in an API key's `scope.workspace_id` " +
+					"(the key's `workspace_id` is null for a key in the Default Workspace).",
 			},
 			"workspaces": schema.ListNestedAttribute{
 				Computed:            true,
