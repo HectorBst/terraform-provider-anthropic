@@ -33,6 +33,7 @@ type federationServer struct {
 	mu         sync.Mutex
 	exchanges  []map[string]string
 	authorized []string
+	headers    http.Header
 }
 
 func newFederationServer(t *testing.T, expiresIn int) *federationServer {
@@ -56,10 +57,19 @@ func newFederationServer(t *testing.T, expiresIn int) *federationServer {
 			return
 		}
 		fs.authorized = append(fs.authorized, r.Header.Get("Authorization"))
+		fs.headers = r.Header.Clone()
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(fs.Close)
 	return fs
+}
+
+// lastHeaders returns the headers of the last request that was not an
+// exchange.
+func (fs *federationServer) lastHeaders() http.Header {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return fs.headers.Clone()
 }
 
 func (fs *federationServer) snapshot() ([]map[string]string, []string) {
@@ -72,12 +82,19 @@ func (fs *federationServer) snapshot() ([]map[string]string, []string) {
 // attribute null.
 func federationValue(t *testing.T, attrs map[string]tftypes.Value) tftypes.Value {
 	t.Helper()
+	return nestedValue(t, "federation", attrs)
+}
+
+// nestedValue builds the provider's nested attribute name from attrs, every
+// other attribute null.
+func nestedValue(t *testing.T, name string, attrs map[string]tftypes.Value) tftypes.Value {
+	t.Helper()
 
 	ctx := context.Background()
 	p := &AnthropicProvider{}
 	schemaResp := &provider.SchemaResponse{}
 	p.Schema(ctx, provider.SchemaRequest{}, schemaResp)
-	objType := schemaResp.Schema.Type().TerraformType(ctx).(tftypes.Object).AttributeTypes["federation"].(tftypes.Object)
+	objType := schemaResp.Schema.Type().TerraformType(ctx).(tftypes.Object).AttributeTypes[name].(tftypes.Object)
 
 	values := make(map[string]tftypes.Value, len(objType.AttributeTypes))
 	for name, attrType := range objType.AttributeTypes {
