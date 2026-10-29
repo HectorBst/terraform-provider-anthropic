@@ -7,12 +7,6 @@ resource "anthropic_tunnel" "corp" {
 resource "anthropic_tunnel_certificate" "ca" {
   tunnel_id          = anthropic_tunnel.corp.id
   ca_certificate_pem = file("${path.module}/ca.crt")
-
-  # On replacement, archive the old CA only once the API has accepted the new
-  # one (a tunnel holds up to two certificates).
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 output "tunnel_certificate_fingerprint" {
