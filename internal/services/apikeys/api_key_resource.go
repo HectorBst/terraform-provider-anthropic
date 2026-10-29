@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/ippontech/terraform-provider-anthropic/internal/admin"
 	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
@@ -192,12 +193,7 @@ func (r *APIKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"scope": schema.SingleNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: apiKeyScopeDescription,
-				// scope, principal and expires_at did not exist before: in a
-				// state written by an older version they are null, and
-				// UseStateForUnknown would plan that null, which Update's
-				// values then contradict when the refresh is skipped
-				// (-refresh=false). A null prior value plans as unknown.
-				PlanModifiers: []planmodifier.Object{objectplanmodifier.UseNonNullStateForUnknown()},
+				PlanModifiers:       []planmodifier.Object{stateUnlessPreUpgrade{}},
 				Attributes: map[string]schema.Attribute{
 					"type": schema.StringAttribute{
 						Computed:            true,
@@ -212,7 +208,7 @@ func (r *APIKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"principal": schema.SingleNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: apiKeyPrincipalDescription,
-				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseNonNullStateForUnknown()},
+				PlanModifiers:       []planmodifier.Object{stateUnlessPreUpgrade{}},
 				Attributes: map[string]schema.Attribute{
 					"type": schema.StringAttribute{
 						Computed:            true,
@@ -231,7 +227,7 @@ func (r *APIKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"expires_at": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: apiKeyExpiresAtDescription,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
+				PlanModifiers:       []planmodifier.String{stateUnlessPreUpgrade{}},
 			},
 			"created_at": schema.StringAttribute{
 				Computed:            true,
@@ -470,6 +466,46 @@ func keepLegacyEmptyValues(data *APIKeyResourceModel, planned APIKeyResourceMode
 	})
 	if noCreator, _ := apiKeyCreatedByValue(nil); data.CreatedBy.Equal(noCreator) && planned.CreatedBy.Equal(legacyCreatedBy) {
 		data.CreatedBy = planned.CreatedBy
+	}
+}
+
+// stateUnlessPreUpgrade is the plan modifier of scope, principal and
+// expires_at. Like UseStateForUnknown it plans the prior state value, a real
+// null included (a key that never expires, a legacy key with no principal),
+// except over a state written before these attributes existed: they are all
+// null there, and planning that null would make Update's values an
+// inconsistent result when the refresh is skipped (-refresh=false). Such a
+// state is told apart by a null scope, which the API always sends; the value
+// is then left unknown for Update to fill.
+type stateUnlessPreUpgrade struct{}
+
+func (stateUnlessPreUpgrade) Description(context.Context) string {
+	return "Keeps the prior state value, unless the state predates the attribute."
+}
+
+func (m stateUnlessPreUpgrade) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+// keep reports whether the prior state value should be planned.
+func (stateUnlessPreUpgrade) keep(ctx context.Context, state tfsdk.State, planUnknown, configUnknown bool, diags *diag.Diagnostics) bool {
+	if state.Raw.IsNull() || !planUnknown || configUnknown {
+		return false
+	}
+	var scope types.Object
+	diags.Append(state.GetAttribute(ctx, path.Root("scope"), &scope)...)
+	return !diags.HasError() && !scope.IsNull()
+}
+
+func (m stateUnlessPreUpgrade) PlanModifyObject(ctx context.Context, req planmodifier.ObjectRequest, resp *planmodifier.ObjectResponse) {
+	if m.keep(ctx, req.State, req.PlanValue.IsUnknown(), req.ConfigValue.IsUnknown(), &resp.Diagnostics) {
+		resp.PlanValue = req.StateValue
+	}
+}
+
+func (m stateUnlessPreUpgrade) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if m.keep(ctx, req.State, req.PlanValue.IsUnknown(), req.ConfigValue.IsUnknown(), &resp.Diagnostics) {
+		resp.PlanValue = req.StateValue
 	}
 }
 

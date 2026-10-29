@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -455,57 +456,105 @@ func TestAPIKeyResource_UpdateKeepsLegacyEmptyValues(t *testing.T) {
 	}
 }
 
-// A state written before scope, principal and expires_at existed holds null
-// for them. When an update skips the refresh (-refresh=false), they must be
-// planned unknown, not null: Update writes the API's values, and a planned
-// null would make that an inconsistent result after apply.
-func TestAPIKeyResource_newAttributesPlanUnknownOverLegacyState(t *testing.T) {
+// planNewAttribute runs the schema plan modifiers of scope, principal or
+// expires_at for an update over state, as Terraform plans a Computed attribute
+// of a resource that changes (unknown before the modifiers), and returns the
+// planned value.
+func planNewAttribute(t *testing.T, s schema.Schema, state tfsdk.State, name string) attr.Value {
+	t.Helper()
 	ctx := context.Background()
+	plan := tfsdk.Plan{Raw: state.Raw, Schema: s}
+	switch a := s.Attributes[name].(type) {
+	case schema.SingleNestedAttribute:
+		attrTypes := a.GetType().(types.ObjectType).AttrTypes
+		var stateValue types.Object
+		if d := state.GetAttribute(ctx, path.Root(name), &stateValue); d.HasError() {
+			t.Fatal(d)
+		}
+		req := planmodifier.ObjectRequest{
+			Path: path.Root(name), State: state, Plan: plan,
+			StateValue: stateValue, ConfigValue: types.ObjectNull(attrTypes), PlanValue: types.ObjectUnknown(attrTypes),
+		}
+		resp := planmodifier.ObjectResponse{PlanValue: req.PlanValue}
+		for _, m := range a.PlanModifiers {
+			m.PlanModifyObject(ctx, req, &resp)
+			req.PlanValue = resp.PlanValue
+		}
+		if resp.Diagnostics.HasError() {
+			t.Fatal(resp.Diagnostics)
+		}
+		return resp.PlanValue
+	case schema.StringAttribute:
+		var stateValue types.String
+		if d := state.GetAttribute(ctx, path.Root(name), &stateValue); d.HasError() {
+			t.Fatal(d)
+		}
+		req := planmodifier.StringRequest{
+			Path: path.Root(name), State: state, Plan: plan,
+			StateValue: stateValue, ConfigValue: types.StringNull(), PlanValue: types.StringUnknown(),
+		}
+		resp := planmodifier.StringResponse{PlanValue: req.PlanValue}
+		for _, m := range a.PlanModifiers {
+			m.PlanModifyString(ctx, req, &resp)
+			req.PlanValue = resp.PlanValue
+		}
+		if resp.Diagnostics.HasError() {
+			t.Fatal(resp.Diagnostics)
+		}
+		return resp.PlanValue
+	default:
+		t.Fatalf("%s is %T", name, s.Attributes[name])
+		return nil
+	}
+}
+
+// scope, principal and expires_at keep their prior value on an update, a real
+// null included, so a key that never expires or has no principal shows no
+// "(known after apply)". Over a state written before they existed (all three
+// null, scope included, which the API always sends) they are planned unknown,
+// not null: with the refresh skipped (-refresh=false) Update writes the API's
+// values, and a planned null would make that an inconsistent result.
+func TestAPIKeyResource_newAttributesPlan(t *testing.T) {
 	r := &APIKeyResource{}
 	s := schematest.ResourceSchema(t, r)
 	objType := schematest.ResourceObjectType(t, r)
-	vals := schematest.NullValues(t, r)
-	vals["id"] = tftypes.NewValue(tftypes.String, "apikey_01LEGACY")
-	vals["name"] = tftypes.NewValue(tftypes.String, "Legacy key")
-	vals["status"] = tftypes.NewValue(tftypes.String, "active")
-	state := tfsdk.State{Raw: tftypes.NewValue(objType, vals), Schema: s}
-	plan := tfsdk.Plan{Raw: state.Raw, Schema: s}
+	base := func() map[string]tftypes.Value {
+		vals := schematest.NullValues(t, r)
+		vals["id"] = tftypes.NewValue(tftypes.String, "apikey_01ABC")
+		vals["name"] = tftypes.NewValue(tftypes.String, "Key")
+		vals["status"] = tftypes.NewValue(tftypes.String, "active")
+		return vals
+	}
 
+	legacy := tfsdk.State{Raw: tftypes.NewValue(objType, base()), Schema: s}
 	for _, name := range []string{"scope", "principal", "expires_at"} {
-		t.Run(name, func(t *testing.T) {
-			switch a := s.Attributes[name].(type) {
-			case schema.SingleNestedAttribute:
-				attrTypes := a.GetType().(types.ObjectType).AttrTypes
-				req := planmodifier.ObjectRequest{
-					Path: path.Root(name), State: state, Plan: plan,
-					StateValue: types.ObjectNull(attrTypes), ConfigValue: types.ObjectNull(attrTypes), PlanValue: types.ObjectUnknown(attrTypes),
-				}
-				resp := planmodifier.ObjectResponse{PlanValue: req.PlanValue}
-				for _, m := range a.PlanModifiers {
-					m.PlanModifyObject(ctx, req, &resp)
-					req.PlanValue = resp.PlanValue
-				}
-				if !resp.PlanValue.IsUnknown() {
-					t.Errorf("planned %v, want unknown", resp.PlanValue)
-				}
-			case schema.StringAttribute:
-				req := planmodifier.StringRequest{
-					Path: path.Root(name), State: state, Plan: plan,
-					StateValue: types.StringNull(), ConfigValue: types.StringNull(), PlanValue: types.StringUnknown(),
-				}
-				resp := planmodifier.StringResponse{PlanValue: req.PlanValue}
-				for _, m := range a.PlanModifiers {
-					m.PlanModifyString(ctx, req, &resp)
-					req.PlanValue = resp.PlanValue
-				}
-				if !resp.PlanValue.IsUnknown() {
-					t.Errorf("planned %v, want unknown", resp.PlanValue)
-				}
-			default:
-				t.Fatalf("%s is %T", name, s.Attributes[name])
+		t.Run("pre-upgrade state/"+name, func(t *testing.T) {
+			if got := planNewAttribute(t, s, legacy, name); !got.IsUnknown() {
+				t.Errorf("planned %v, want unknown", got)
 			}
 		})
 	}
+
+	current := base()
+	scopeType := objType.AttributeTypes["scope"]
+	current["scope"] = tftypes.NewValue(scopeType, map[string]tftypes.Value{
+		"type":         tftypes.NewValue(tftypes.String, "workspace"),
+		"workspace_id": tftypes.NewValue(tftypes.String, "wrkspc_01WS"),
+	})
+	refreshed := tfsdk.State{Raw: tftypes.NewValue(objType, current), Schema: s}
+	for _, name := range []string{"principal", "expires_at"} {
+		t.Run("real null kept/"+name, func(t *testing.T) {
+			if got := planNewAttribute(t, s, refreshed, name); got.IsUnknown() || !got.IsNull() {
+				t.Errorf("planned %v, want the stored null", got)
+			}
+		})
+	}
+	t.Run("value kept/scope", func(t *testing.T) {
+		got, ok := planNewAttribute(t, s, refreshed, "scope").(types.Object)
+		if !ok || got.IsUnknown() || got.IsNull() || got.Attributes()["workspace_id"].(types.String).ValueString() != "wrkspc_01WS" {
+			t.Errorf("planned %v, want the stored scope", got)
+		}
+	})
 }
 
 // Read drives the resource end to end: an expired key keeps its read-only
