@@ -84,27 +84,35 @@ func (r *ExternalKeyResource) Schema(_ context.Context, _ resource.SchemaRequest
 						MarkdownDescription: kmsARNDescription + " Required when `type` is `aws`.",
 						Validators:          []validator.String{stringvalidator.LengthBetween(1, 2048)},
 					},
+					// An empty string would be sent as is and come back null
+					// (or, for region, derived): an inconsistent result, so
+					// every attribute below rejects it at plan time.
 					"region": schema.StringAttribute{
 						Optional:            true,
 						Computed:            true,
 						MarkdownDescription: regionDescription,
+						Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 						PlanModifiers:       []planmodifier.String{regionFollowsKMSARN{}},
 					},
 					"key_name": schema.StringAttribute{
 						Optional:            true,
 						MarkdownDescription: keyNameDescription + " Required when `type` is `gcp` or `azure`.",
+						Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 					},
 					"vault_uri": schema.StringAttribute{
 						Optional:            true,
 						MarkdownDescription: vaultURIDescription + " Required when `type` is `azure`.",
+						Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 					},
 					"tenant_id": schema.StringAttribute{
 						Optional:            true,
 						MarkdownDescription: tenantIDDescription + " Required when `type` is `azure`.",
+						Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 					},
 					"client_id": schema.StringAttribute{
 						Optional:            true,
 						MarkdownDescription: clientIDDescription,
+						Validators:          []validator.String{stringvalidator.LengthAtLeast(1)},
 					},
 				},
 			},
@@ -201,6 +209,13 @@ func (r *ExternalKeyResource) ModifyPlan(ctx context.Context, req resource.Modif
 	changed, diags := frozenAttributesChanged(ctx, plan, state)
 	resp.Diagnostics.Append(diags...)
 	if len(changed) == 0 {
+		if unknown := unknownFrozenAttributes(ctx, plan); len(unknown) > 0 {
+			resp.Diagnostics.AddWarning("Attached external key: value known only at apply", fmt.Sprintf(
+				"External key %s is used by at least one workspace, so the API refuses any change to %s. "+
+					"Their planned value is known only at apply (it comes from a resource being created or replaced): "+
+					"if it differs from the current one, the update will fail at apply, after the resources it depends on have changed.",
+				state.ID.ValueString(), strings.Join(unknown, ", ")))
+		}
 		return
 	}
 	resp.Diagnostics.AddError("Cannot change an attached external key", fmt.Sprintf(
@@ -235,7 +250,7 @@ func (r *ExternalKeyResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 
-	r.setStateFromResponse(ctx, respBytes, "create", &resp.State, &resp.Diagnostics)
+	r.setStateFromResponse(ctx, respBytes, "create", plan.ProviderConfig, &resp.State, &resp.Diagnostics)
 }
 
 // --- Read ---
@@ -257,7 +272,7 @@ func (r *ExternalKeyResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	r.setStateFromResponse(ctx, respBytes, "read", &resp.State, &resp.Diagnostics)
+	r.setStateFromResponse(ctx, respBytes, "read", state.ProviderConfig, &resp.State, &resp.Diagnostics)
 }
 
 // --- Update ---
@@ -282,7 +297,7 @@ func (r *ExternalKeyResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	r.setStateFromResponse(ctx, respBytes, "update", &resp.State, &resp.Diagnostics)
+	r.setStateFromResponse(ctx, respBytes, "update", plan.ProviderConfig, &resp.State, &resp.Diagnostics)
 }
 
 // --- Delete ---
@@ -340,7 +355,9 @@ func (r *ExternalKeyResource) ImportState(ctx context.Context, req resource.Impo
 // ============================================================================
 
 // setStateFromResponse decodes an external key payload and stores it as state.
-func (r *ExternalKeyResource) setStateFromResponse(ctx context.Context, respBytes []byte, op string, state *tfsdk.State, diags *diag.Diagnostics) {
+// prior is the provider_config the request was built from: the plan on create
+// and update, the state on read.
+func (r *ExternalKeyResource) setStateFromResponse(ctx context.Context, respBytes []byte, op string, prior types.Object, state *tfsdk.State, diags *diag.Diagnostics) {
 	var key externalKeyAPIResponse
 	if err := json.Unmarshal(respBytes, &key); err != nil {
 		diags.AddError("Parse Error", fmt.Sprintf("Unable to parse %s external key response: %s", op, err))
@@ -352,7 +369,31 @@ func (r *ExternalKeyResource) setStateFromResponse(ctx context.Context, respByte
 	if diags.HasError() {
 		return
 	}
+	diags.Append(keepPriorVaultURI(ctx, &data, prior)...)
+	if diags.HasError() {
+		return
+	}
 	diags.Append(state.Set(ctx, &data)...)
+}
+
+// keepPriorVaultURI keeps the vault_uri of prior when the API returns the
+// same URI up to a trailing slash or letter case. The Azure portal shows the
+// Key Vault URI with a trailing slash, the reference documents it without,
+// and whether the API normalizes it is not documented: writing the API's
+// spelling over the configured one would be an inconsistent result after
+// apply, then a diff on every plan that an attached key cannot apply.
+func keepPriorVaultURI(ctx context.Context, data *ExternalKeyModel, prior types.Object) diag.Diagnostics {
+	priorPC, diags := providerConfigFromObject(ctx, prior)
+	gotPC, d := providerConfigFromObject(ctx, data.ProviderConfig)
+	diags.Append(d...)
+	if diags.HasError() || !isKnown(priorPC.VaultURI) || !isKnown(gotPC.VaultURI) || priorPC.VaultURI.Equal(gotPC.VaultURI) ||
+		!strings.EqualFold(strings.TrimSuffix(priorPC.VaultURI.ValueString(), "/"), strings.TrimSuffix(gotPC.VaultURI.ValueString(), "/")) {
+		return diags
+	}
+	gotPC.VaultURI = priorPC.VaultURI
+	data.ProviderConfig, d = types.ObjectValueFrom(ctx, providerConfigAttrTypes, gotPC)
+	diags.Append(d...)
+	return diags
 }
 
 // providerConfigFromObject decodes the provider_config object of a model.
@@ -373,7 +414,9 @@ func isKnown(v types.String) bool {
 // providerConfigBody builds the provider_config union member the API expects:
 // `type` plus every known attribute. An unknown `region` (the plan leaves it
 // unknown when `kms_arn` changes) is omitted so the API derives it. A
-// `client_id` cleared since prior state is sent as an explicit null.
+// `client_id` cleared from an azure key that stays azure is sent as an
+// explicit null; on a switch to aws or gcp the new member replaces the whole
+// configuration, and client_id does not belong to it.
 func providerConfigBody(pc externalKeyProviderConfigModel, prior *externalKeyProviderConfigModel) map[string]any {
 	body := map[string]any{"type": pc.Type.ValueString()}
 	for name, v := range map[string]types.String{
@@ -388,7 +431,8 @@ func providerConfigBody(pc externalKeyProviderConfigModel, prior *externalKeyPro
 			body[name] = v.ValueString()
 		}
 	}
-	if prior != nil && pc.ClientID.IsNull() && isKnown(prior.ClientID) {
+	if prior != nil && pc.Type.ValueString() == "azure" && prior.Type.Equal(pc.Type) &&
+		pc.ClientID.IsNull() && isKnown(prior.ClientID) {
 		body["client_id"] = nil
 	}
 	return body
@@ -485,6 +529,36 @@ func frozenAttributesChanged(ctx context.Context, plan, state ExternalKeyModel) 
 		return changed, diags
 	}
 	return append(changed, changedProviderConfigFields(planPC, statePC)...), diags
+}
+
+// unknownFrozenAttributes lists the attributes an attached key no longer
+// accepts whose planned value is unknown, so that frozenAttributesChanged
+// cannot tell whether they change. region is left out: it is unknown only
+// when kms_arn or type is, or while the API derives it.
+func unknownFrozenAttributes(ctx context.Context, plan ExternalKeyModel) []string {
+	var unknown []string
+	if plan.Geo.IsUnknown() {
+		unknown = append(unknown, "geo")
+	}
+	if plan.ProviderConfig.IsUnknown() {
+		return append(unknown, "provider_config")
+	}
+	pc, diags := providerConfigFromObject(ctx, plan.ProviderConfig)
+	if diags.HasError() {
+		return unknown
+	}
+	for _, f := range []struct {
+		name  string
+		value types.String
+	}{
+		{"type", pc.Type}, {"kms_arn", pc.KMSARN}, {"key_name", pc.KeyName},
+		{"vault_uri", pc.VaultURI}, {"tenant_id", pc.TenantID}, {"client_id", pc.ClientID},
+	} {
+		if f.value.IsUnknown() {
+			unknown = append(unknown, "provider_config."+f.name)
+		}
+	}
+	return unknown
 }
 
 // --- provider_config validation ---

@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -363,6 +364,8 @@ func TestBuildExternalKeyUpdateBody(t *testing.T) {
 	newARN.Region = unknown
 	noClient := azurePC
 	noClient.ClientID = null
+	gcpPC := externalKeyProviderConfigModel{Type: str("gcp"), KMSARN: null, Region: null,
+		KeyName: str("projects/p/locations/l/keyRings/r/cryptoKeys/k"), VaultURI: null, TenantID: null, ClientID: null}
 
 	cases := []struct {
 		name        string
@@ -398,6 +401,19 @@ func TestBuildExternalKeyUpdateBody(t *testing.T) {
 			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), noClient) },
 			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), awsPC) },
 			`{"provider_config":{"key_name":"k","tenant_id":"tenant","type":"azure","vault_uri":"https://v.vault.azure.net"}}`,
+		},
+		{
+			// client_id belongs to the azure member only: no null for it in a gcp body.
+			"switch from azure with client_id to gcp",
+			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), gcpPC) },
+			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), azurePC) },
+			`{"provider_config":{"key_name":"projects/p/locations/l/keyRings/r/cryptoKeys/k","type":"gcp"}}`,
+		},
+		{
+			"switch from azure with client_id to aws",
+			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), newARN) },
+			func(t *testing.T) ExternalKeyModel { return base(t, str("a"), azurePC) },
+			`{"provider_config":{"kms_arn":"arn:aws:kms:us-west-2:111122223333:key/other","type":"aws"}}`,
 		},
 	}
 	for _, tc := range cases {
@@ -489,6 +505,12 @@ func TestExternalKeyResource_ModifyPlan(t *testing.T) {
 	renamed["display_name"] = "renamed"
 	euGeo := awsStateTop("attached")
 	euGeo["geo"] = "eu"
+	unknownGeo := awsStateTop("attached")
+	unknownGeo["geo"] = tftypes.UnknownValue
+	objType := schematest.ResourceObjectType(t, r)
+	unknownPCTop := awsStateTop("attached")
+	unknownPCTop["provider_config"] = tftypes.NewValue(objType.AttributeTypes["provider_config"], tftypes.UnknownValue)
+	unknownPCValue := objectValue(objType, unknownPCTop)
 
 	cases := []struct {
 		name         string
@@ -502,7 +524,12 @@ func TestExternalKeyResource_ModifyPlan(t *testing.T) {
 		{name: "attached, provider switch", attachment: "attached", plan: ptr(planWith(awsStateTop("attached"), gcpPC)), wantError: "provider_config.type"},
 		{name: "attached, geo change", attachment: "attached", plan: ptr(planWith(euGeo, awsStatePC())), wantError: "geo"},
 		{name: "attached, display_name only", attachment: "attached", plan: ptr(planWith(renamed, awsStatePC()))},
-		{name: "attached, kms_arn unknown at plan", attachment: "attached", plan: ptr(planWith(awsStateTop("attached"), unknownARNPC))},
+		// The value is known only at apply: a warning says the update fails
+		// then if it differs.
+		{name: "attached, kms_arn unknown at plan", attachment: "attached", plan: ptr(planWith(awsStateTop("attached"), unknownARNPC)), wantWarning: true},
+		{name: "attached, geo unknown at plan", attachment: "attached", plan: ptr(planWith(unknownGeo, awsStatePC())), wantWarning: true},
+		{name: "attached, provider_config unknown at plan", attachment: "attached", plan: ptr(tfsdk.Plan{Schema: s, Raw: unknownPCValue}), wantWarning: true},
+		{name: "unattached, kms_arn unknown at plan", attachment: "unattached", plan: ptr(planWith(awsStateTop("unattached"), unknownARNPC))},
 		{name: "unattached, kms_arn change", attachment: "unattached", plan: ptr(planWith(awsStateTop("unattached"), newARNPC))},
 		{name: "destroy attached", attachment: "attached", wantWarning: true},
 		{name: "destroy unattached", attachment: "unattached"},
@@ -536,6 +563,98 @@ func TestExternalKeyResource_ModifyPlan(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// --- vault_uri spelling ---
+
+// The Azure portal shows the Key Vault URI with a trailing slash. If the API
+// returns it without one (or in another letter case), the configured spelling
+// stays in state on create and on read, so the apply is consistent and the
+// next plan shows no diff. Another URI is taken from the API as it is.
+func TestExternalKeyResource_keepsVaultURISpelling(t *testing.T) {
+	const apiURI = "https://example.vault.azure.net"
+	azurePC := func(uri string) map[string]any {
+		return map[string]any{"type": "azure", "key_name": "anthropic-cmek", "tenant_id": "00000000-0000-0000-0000-000000000000", "vault_uri": uri}
+	}
+	azureTop := map[string]any{
+		"id": "ekey_01AZURE", "geo": "us", "attachment": "unattached",
+		"created_at": "2026-10-01T00:00:00Z", "updated_at": "2026-10-01T00:00:00Z",
+	}
+	srv := newKeyServer(t, func(w http.ResponseWriter, _ *http.Request, _ map[string]any) {
+		_, _ = io.WriteString(w, azureKeyFixture)
+	})
+	r := &ExternalKeyResource{client: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+
+	vaultURI := func(t *testing.T, st tfsdk.State) string {
+		t.Helper()
+		var data ExternalKeyModel
+		if diags := st.Get(context.Background(), &data); diags.HasError() {
+			t.Fatalf("state: %v", diags)
+		}
+		return data.ProviderConfig.Attributes()["vault_uri"].(types.String).ValueString()
+	}
+
+	t.Run("create", func(t *testing.T) {
+		planTop := map[string]any{
+			"id": tftypes.UnknownValue, "geo": tftypes.UnknownValue, "attachment": tftypes.UnknownValue,
+			"created_at": tftypes.UnknownValue, "updated_at": tftypes.UnknownValue,
+		}
+		plan := tfsdk.Plan{Schema: s, Raw: keyValue(t, planTop, azurePC(apiURI+"/"))}
+		resp := resource.CreateResponse{State: tfsdk.State{Schema: s}}
+		r.Create(context.Background(), resource.CreateRequest{Plan: plan}, &resp)
+		if resp.Diagnostics.HasError() {
+			t.Fatalf("Create: %v", resp.Diagnostics)
+		}
+		if got := vaultURI(t, resp.State); got != apiURI+"/" {
+			t.Errorf("vault_uri = %q, want the planned %q", got, apiURI+"/")
+		}
+	})
+
+	for name, tc := range map[string]struct{ stored, want string }{
+		"read keeps the stored spelling": {stored: "https://EXAMPLE.vault.azure.net/", want: "https://EXAMPLE.vault.azure.net/"},
+		"read takes another URI":         {stored: "https://other.vault.azure.net/", want: apiURI},
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := tfsdk.State{Schema: s, Raw: keyValue(t, azureTop, azurePC(tc.stored))}
+			resp := resource.ReadResponse{State: state}
+			r.Read(context.Background(), resource.ReadRequest{State: state}, &resp)
+			if resp.Diagnostics.HasError() {
+				t.Fatalf("Read: %v", resp.Diagnostics)
+			}
+			if got := vaultURI(t, resp.State); got != tc.want {
+				t.Errorf("vault_uri = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// An empty string would be sent as is and read back as null (or a derived
+// region): every optional provider_config string rejects it at plan time.
+func TestProviderConfigAttributes_rejectEmptyString(t *testing.T) {
+	r := &ExternalKeyResource{}
+	s := schematest.ResourceSchema(t, r)
+	pcAttr, ok := s.Attributes["provider_config"].(schema.SingleNestedAttribute)
+	if !ok {
+		t.Fatalf("provider_config is %T", s.Attributes["provider_config"])
+	}
+	for _, name := range []string{"kms_arn", "region", "key_name", "vault_uri", "tenant_id", "client_id"} {
+		t.Run(name, func(t *testing.T) {
+			attrSchema, ok := pcAttr.Attributes[name].(schema.StringAttribute)
+			if !ok {
+				t.Fatalf("%s is %T", name, pcAttr.Attributes[name])
+			}
+			resp := &validator.StringResponse{}
+			for _, v := range attrSchema.Validators {
+				v.ValidateString(context.Background(), validator.StringRequest{
+					Path: path.Root("provider_config").AtName(name), ConfigValue: types.StringValue(""),
+				}, resp)
+			}
+			if !resp.Diagnostics.HasError() {
+				t.Errorf(`%s = "" passes validation`, name)
+			}
+		})
+	}
+}
 
 // --- provider_config validator ---
 
