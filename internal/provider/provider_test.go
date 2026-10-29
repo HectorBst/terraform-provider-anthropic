@@ -12,7 +12,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
+	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -217,6 +220,132 @@ func TestConfigureClientsCarryExactlyOneCredential(t *testing.T) {
 			t.Errorf("oauth client also sent x-api-key: %q", v)
 		}
 	})
+}
+
+// TestConfigureWorkspaceIDHeader: workspace_id scopes the standard client
+// alone. An identity-linked key that is not bound to one workspace is
+// rejected without the header, while the OAuth client must not carry it: a
+// federated bearer selects its workspace at exchange time.
+func TestConfigureWorkspaceIDHeader(t *testing.T) {
+	tests := []struct {
+		name   string
+		config map[string]tftypes.Value
+		env    string
+		want   string
+	}{
+		{
+			name:   "config",
+			config: map[string]tftypes.Value{"workspace_id": tftypes.NewValue(tftypes.String, "wrkspc_config")},
+			want:   "wrkspc_config",
+		},
+		{
+			// The SDKs' federation variable: exported by other tools and
+			// by the WIF guide, and fatal to a single-workspace key, so it
+			// never reaches the standard client on its own.
+			name: "environment ignored",
+			env:  "wrkspc_env",
+			want: "",
+		},
+		{
+			name:   "config with environment set",
+			config: map[string]tftypes.Value{"workspace_id": tftypes.NewValue(tftypes.String, "wrkspc_config")},
+			env:    "wrkspc_env",
+			want:   "wrkspc_config",
+		},
+		{
+			name: "neither",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got http.Header
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Clone()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer srv.Close()
+
+			clearCredentialEnv(t)
+			t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
+			t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-env")
+			t.Setenv("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat01-env")
+			if tt.env != "" {
+				t.Setenv("ANTHROPIC_WORKSPACE_ID", tt.env)
+			}
+
+			pd := providerDataFrom(t, configureProvider(t, tt.config))
+
+			if err := pd.Client.Get(context.Background(), "/v1/models", nil, nil); err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			if v := got.Get("anthropic-workspace-id"); v != tt.want {
+				t.Errorf("standard client anthropic-workspace-id = %q, want %q", v, tt.want)
+			}
+
+			if err := pd.OAuthClient.Get(context.Background(), "/v1/models", nil, nil); err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			if v := got.Get("anthropic-workspace-id"); v != "" {
+				t.Errorf("oauth client sent anthropic-workspace-id = %q, want none", v)
+			}
+		})
+	}
+}
+
+// TestWorkspaceIDValidator: the format is checked at plan time, so a trailing
+// newline (file() without trimspace) or a non-workspace ID never reaches the
+// header, where net/http would fail every request of the standard client.
+func TestWorkspaceIDValidator(t *testing.T) {
+	ctx := context.Background()
+	schemaResp := &provider.SchemaResponse{}
+	(&AnthropicProvider{version: "test"}).Schema(ctx, provider.SchemaRequest{}, schemaResp)
+	attr, ok := schemaResp.Schema.Attributes["workspace_id"].(schema.StringAttribute)
+	if !ok {
+		t.Fatalf("workspace_id is %T, want schema.StringAttribute", schemaResp.Schema.Attributes["workspace_id"])
+	}
+	if len(attr.Validators) == 0 {
+		t.Fatal("workspace_id has no validator")
+	}
+
+	for value, valid := range map[string]bool{
+		"wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ":   true,
+		"wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ\n": false,
+		" wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ":  false,
+		"01JwQvzr7rXLA5AGx3HKfFUJ":          false,
+		"wrkspc_":                           false,
+		"":                                  false,
+	} {
+		resp := &validator.StringResponse{}
+		for _, v := range attr.Validators {
+			v.ValidateString(ctx, validator.StringRequest{
+				Path:        path.Root("workspace_id"),
+				ConfigValue: types.StringValue(value),
+			}, resp)
+		}
+		if got := !resp.Diagnostics.HasError(); got != valid {
+			t.Errorf("workspace_id %q: valid = %v, want %v (%v)", value, got, valid, resp.Diagnostics)
+		}
+	}
+}
+
+// TestConfigureRejectsUnknownWorkspaceID: same rule as the federation block.
+// Read as unset, an unknown workspace_id would send no header and route the
+// plan's reads to the key's own workspace.
+func TestConfigureRejectsUnknownWorkspaceID(t *testing.T) {
+	clearCredentialEnv(t)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-env")
+
+	resp := configureProvider(t, map[string]tftypes.Value{
+		"workspace_id": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+	})
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("Configure succeeded, want an error for an unknown workspace_id")
+	}
+	if got := resp.Diagnostics.Errors()[0].Summary(); got != "Unknown Workspace Configuration" {
+		t.Errorf("summary = %q, want Unknown Workspace Configuration", got)
+	}
 }
 
 // TestConfigureStandardClientDropsInheritedBearer covers the mirror case of

@@ -28,6 +28,23 @@ var ProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, erro
 // source tests, which are organization-wide, target this workspace by ID.
 const TerraformTestsWorkspaceID = "wrkspc_01HMrPGQfWoZ5LnhFhxuvNsm"
 
+// TerraformTests2WorkspaceID is the ID of the second dedicated test workspace,
+// "terraform-tests-2". It exists only so the multi-workspace key (see
+// PreCheckMultiWorkspace) has two workspaces to be routed between, and holds
+// nothing else: tests that do not exercise the workspace_id provider argument
+// must keep using TerraformTestsWorkspaceID.
+const TerraformTests2WorkspaceID = "wrkspc_01MdoKe74QuV4kFCC23VKZfY"
+
+// MultiWorkspaceAPIKeyEnv names the variable carrying the multi-workspace key
+// used by the workspace_id provider-argument tests: a service account key of
+// the terraform-provider-anthropic-tests account, member of terraform-tests
+// and terraform-tests-2 and scoped to neither, so the API rejects its requests
+// with a 400 until the anthropic-workspace-id header names one of them. Kept
+// apart from ANTHROPIC_API_KEY on purpose: every other acceptance test relies
+// on that key being single-workspace so its objects land in terraform-tests
+// without any header.
+const MultiWorkspaceAPIKeyEnv = "ANTHROPIC_MULTI_WORKSPACE_API_KEY"
+
 // SkipUnlessAcc skips the test unless TF_ACC is set. resource.Test applies
 // the same gate, but fixture setup that runs before it (seeding objects
 // through the SDK) does not, so every PreCheck* helper calls this first:
@@ -72,6 +89,45 @@ func PreCheckOAuth(t *testing.T) {
 	}
 }
 
+// PreCheckMultiWorkspace gates the acceptance tests of the workspace_id
+// provider argument, which need the multi-workspace key named by
+// MultiWorkspaceAPIKeyEnv. Unlike PreCheck it skips rather than fails when
+// the variable is unset: the key is a CI secret contributors do not have,
+// and the tests it gates are the only ones that need it.
+func PreCheckMultiWorkspace(t *testing.T) {
+	t.Helper()
+	SkipUnlessAcc(t)
+	if v := os.Getenv(MultiWorkspaceAPIKeyEnv); v == "" {
+		t.Skipf("%s must be set for multi-workspace acceptance tests; skipping", MultiWorkspaceAPIKeyEnv)
+	}
+}
+
+// newSDKClient builds an SDK client from explicit options only, the way the
+// provider's own newSDKClient does: option.WithoutEnvironmentDefaults keeps
+// the other exported credential (and any ant profile) out of the client, and
+// ANTHROPIC_BASE_URL is re-applied by hand since the marker option skips it
+// too. Without that second step a test's out-of-band reads would query the
+// production host while the provider under test talks to another one.
+func newSDKClient(explicit ...option.RequestOption) *anthropic.Client {
+	opts := append([]option.RequestOption{option.WithoutEnvironmentDefaults()}, explicit...)
+	if baseURL := os.Getenv("ANTHROPIC_BASE_URL"); baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+	c := anthropic.NewClient(opts...)
+	return &c
+}
+
+// NewMultiWorkspaceClient returns an SDK client authenticated with the
+// multi-workspace key and routed to workspaceID through the
+// anthropic-workspace-id header, for tests that check out of band which
+// workspace an object landed in. Call PreCheckMultiWorkspace first.
+func NewMultiWorkspaceClient(workspaceID string) *anthropic.Client {
+	return newSDKClient(
+		option.WithAPIKey(os.Getenv(MultiWorkspaceAPIKeyEnv)),
+		option.WithHeader("anthropic-workspace-id", workspaceID),
+	)
+}
+
 // NewOAuthClient returns an SDK client authenticated with the org:admin OAuth
 // bearer token from ANTHROPIC_AUTH_TOKEN, for acceptance tests that seed
 // fixtures or verify destroy/archive behaviour directly against the live WIF
@@ -81,11 +137,7 @@ func PreCheckOAuth(t *testing.T) {
 // ANTHROPIC_API_KEY (always present in a test run) is not sent alongside the
 // bearer, which these endpoints reject.
 func NewOAuthClient() *anthropic.Client {
-	c := anthropic.NewClient(
-		option.WithoutEnvironmentDefaults(),
-		option.WithAuthToken(os.Getenv("ANTHROPIC_AUTH_TOKEN")),
-	)
-	return &c
+	return newSDKClient(option.WithAuthToken(os.Getenv("ANTHROPIC_AUTH_TOKEN")))
 }
 
 // NewAPIKeyClient returns an SDK client authenticated with the standard API
@@ -95,9 +147,5 @@ func NewOAuthClient() *anthropic.Client {
 // defaults, so an exported ANTHROPIC_AUTH_TOKEN is not sent alongside the
 // key.
 func NewAPIKeyClient() *anthropic.Client {
-	c := anthropic.NewClient(
-		option.WithoutEnvironmentDefaults(),
-		option.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")),
-	)
-	return &c
+	return newSDKClient(option.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")))
 }

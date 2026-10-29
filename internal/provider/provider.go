@@ -6,14 +6,17 @@ package provider
 import (
 	"context"
 	"os"
+	"regexp"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/ippontech/terraform-provider-anthropic/internal/admin"
 	"github.com/ippontech/terraform-provider-anthropic/internal/providerdata"
@@ -51,6 +54,7 @@ type AnthropicProviderModel struct {
 	AdminApiKey types.String `tfsdk:"admin_api_key"`
 	AuthToken   types.String `tfsdk:"auth_token"`
 	Federation  types.Object `tfsdk:"federation"`
+	WorkspaceID types.String `tfsdk:"workspace_id"`
 }
 
 func (p *AnthropicProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -79,6 +83,16 @@ func (p *AnthropicProvider) Schema(ctx context.Context, req provider.SchemaReque
 					"Can also be set via the ANTHROPIC_AUTH_TOKEN environment variable.",
 			},
 			"federation": federationSchema(),
+			"workspace_id": schema.StringAttribute{
+				Optional:   true,
+				Validators: []validator.String{stringvalidator.RegexMatches(workspaceIDPattern, "must be a workspace ID (`wrkspc_` followed by letters and digits)")},
+				Description: "Workspace (`wrkspc_...`) the standard API key acts in, sent as the `anthropic-workspace-id` header " +
+					"on every request of the standard client. Required with a personal or service account key that is " +
+					"not scoped to a single workspace; must be left unset with a single-workspace key, which the API " +
+					"rejects with a 404 when the header names any workspace, its own included. Not sent on the Admin API " +
+					"or the org:admin OAuth client, which select their workspace otherwise. Has no environment fallback: " +
+					"ANTHROPIC_WORKSPACE_ID is read by `federation.workspace_id` only.",
+			},
 		},
 	}
 }
@@ -95,6 +109,22 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 	apiKey := resolveCredential(data.ApiKey, "ANTHROPIC_API_KEY")
 	adminApiKey := resolveCredential(data.AdminApiKey, "ANTHROPIC_ADMIN_API_KEY")
 	authToken := resolveCredential(data.AuthToken, "ANTHROPIC_AUTH_TOKEN")
+	// Unknown is an error, not unset, as for the federation block: reading
+	// it as unset would send no header and route the plan's reads to the
+	// key's own workspace, and the workspace is routinely a reference to a
+	// resource of the same module.
+	if data.WorkspaceID.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(path.Root("workspace_id"), "Unknown Workspace Configuration",
+			"workspace_id depends on a value that is not known until apply. Provider configuration must be known at plan time.")
+		return
+	}
+	// Configuration only, deliberately: ANTHROPIC_WORKSPACE_ID is the SDKs'
+	// federation variable, exported by other tools in the same job and by the
+	// WIF guide for federation.workspace_id. A single-workspace key answers
+	// 404 to any anthropic-workspace-id header, its own workspace included
+	// (measured 2026-10-29), so an exported variable must never reach the
+	// standard client on its own. Null reads as "".
+	workspaceID := data.WorkspaceID.ValueString()
 
 	federation, diags := resolveFederation(ctx, data.Federation)
 	resp.Diagnostics.Append(diags...)
@@ -137,7 +167,14 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 	// the environment contributed on its own — see newSDKClient.
 	pd := &providerdata.ProviderData{}
 	if apiKey != "" {
-		pd.Client = newSDKClient(option.WithAPIKey(apiKey))
+		// Only the standard client is workspace-scoped by header: the Admin
+		// API is organization-wide, and a federated bearer selects its
+		// workspace at exchange time.
+		opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+		if workspaceID != "" {
+			opts = append(opts, option.WithHeader("anthropic-workspace-id", workspaceID))
+		}
+		pd.Client = newSDKClient(opts...)
 	}
 	if adminApiKey != "" {
 		pd.AdminClient = admin.NewClient(adminApiKey)
@@ -157,6 +194,11 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 	resp.ResourceData = pd
 }
 
+// workspaceIDPattern is the shape of a workspace ID. Checked at plan time so
+// a stray newline (file() without trimspace) or a wrong ID never reaches the
+// header, where net/http would reject the request on every call.
+var workspaceIDPattern = regexp.MustCompile(`^wrkspc_[0-9A-Za-z]+$`)
+
 // resolveCredential returns the credential to use for one authentication
 // method: the provider argument when it is set, otherwise the environment
 // variable. An unknown value (an unresolved reference at plan time) is treated
@@ -168,8 +210,9 @@ func resolveCredential(configValue types.String, envVar string) string {
 	return os.Getenv(envVar)
 }
 
-// newSDKClient builds an SDK client that carries exactly the credential passed
-// in, and nothing the environment contributed on its own.
+// newSDKClient builds an SDK client that carries exactly the options passed
+// in (the credential, and for the standard client the workspace header), and
+// nothing the environment contributed on its own.
 //
 // option.WithoutEnvironmentDefaults suppresses anthropic.DefaultClientOptions
 // entirely, which matters for more than the credential headers. That chain has
@@ -189,8 +232,8 @@ func resolveCredential(configValue types.String, envVar string) string {
 // still worth honouring is ANTHROPIC_BASE_URL, which the marker option also
 // skips. It is read with an explicit emptiness check: an exported-but-empty
 // value must not replace the SDK's production default with "".
-func newSDKClient(credential option.RequestOption) *anthropic.Client {
-	opts := []option.RequestOption{option.WithoutEnvironmentDefaults(), credential}
+func newSDKClient(explicit ...option.RequestOption) *anthropic.Client {
+	opts := append([]option.RequestOption{option.WithoutEnvironmentDefaults()}, explicit...)
 	if baseURL := os.Getenv("ANTHROPIC_BASE_URL"); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
