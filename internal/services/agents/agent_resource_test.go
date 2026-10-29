@@ -201,6 +201,18 @@ func TestAccAgentResource_withAgentToolset(t *testing.T) {
 					resource.TestCheckResourceAttr("anthropic_agent.test_toolset", "agent_toolset.default_permission_policy", "always_allow"),
 				),
 			},
+			// A per-tool override that leaves `enabled` unset: the post-apply plan
+			// must be empty, i.e. the inherited value the API echoes back maps to
+			// null rather than surfacing as drift (mapToolConfigsToState).
+			{
+				Config: testAccAgentResourceWithToolsetConfigsConfig,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("anthropic_agent.test_toolset", "agent_toolset.configs.#", "1"),
+					resource.TestCheckResourceAttr("anthropic_agent.test_toolset", "agent_toolset.configs.0.name", "bash"),
+					resource.TestCheckResourceAttr("anthropic_agent.test_toolset", "agent_toolset.configs.0.permission_policy", "always_ask"),
+					resource.TestCheckNoResourceAttr("anthropic_agent.test_toolset", "agent_toolset.configs.0.enabled"),
+				),
+			},
 		},
 	})
 }
@@ -287,6 +299,24 @@ resource "anthropic_agent" "test_toolset" {
   agent_toolset = {
     default_enabled           = true
     default_permission_policy = "always_allow"
+  }
+}
+`
+
+const testAccAgentResourceWithToolsetConfigsConfig = `
+resource "anthropic_agent" "test_toolset" {
+  model = "claude-sonnet-4-6"
+  name  = "tf-acc-test-toolset"
+
+  agent_toolset = {
+    default_enabled           = true
+    default_permission_policy = "always_allow"
+    configs = [
+      {
+        name              = "bash"
+        permission_policy = "always_ask"
+      }
+    ]
   }
 }
 `
