@@ -1,3 +1,9 @@
+## [1.63.2](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.63.1...v1.63.2) (2026-10-29)
+
+### 🐛 Bug Fixes
+
+* **agent:** surface out-of-band tool configs and MCP toolsets on read ([#395](https://github.com/ippontech/terraform-provider-anthropic/issues/395)) ([6a279f1](https://github.com/ippontech/terraform-provider-anthropic/commit/6a279f1c380d683bfb16827c5120e899ef5c4d74)), closes [#396](https://github.com/ippontech/terraform-provider-anthropic/issues/396) [#397](https://github.com/ippontech/terraform-provider-anthropic/issues/397) [#398](https://github.com/ippontech/terraform-provider-anthropic/issues/398) [#398](https://github.com/ippontech/terraform-provider-anthropic/issues/398) [#396](https://github.com/ippontech/terraform-provider-anthropic/issues/396) [#397](https://github.com/ippontech/terraform-provider-anthropic/issues/397)
+
 ## [1.63.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.63.0...v1.63.1) (2026-10-29)
 
 ### 🐛 Bug Fixes
