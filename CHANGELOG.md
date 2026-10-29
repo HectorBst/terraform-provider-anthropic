@@ -1,3 +1,9 @@
+## [1.63.3](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.63.2...v1.63.3) (2026-10-29)
+
+### 🐛 Bug Fixes
+
+* **deps:** build with Go 1.26.10 and scan for vulnerabilities on every PR ([#397](https://github.com/ippontech/terraform-provider-anthropic/issues/397)) ([bdc85bf](https://github.com/ippontech/terraform-provider-anthropic/commit/bdc85bf15a72d7114a2bdc70ed5430f91230e5a0)), closes [#395](https://github.com/ippontech/terraform-provider-anthropic/issues/395) [#396](https://github.com/ippontech/terraform-provider-anthropic/issues/396) [#398](https://github.com/ippontech/terraform-provider-anthropic/issues/398) [#292](https://github.com/ippontech/terraform-provider-anthropic/issues/292) [#351](https://github.com/ippontech/terraform-provider-anthropic/issues/351) [#395](https://github.com/ippontech/terraform-provider-anthropic/issues/395) [#396](https://github.com/ippontech/terraform-provider-anthropic/issues/396) [#380](https://github.com/ippontech/terraform-provider-anthropic/issues/380)
+
 ## [1.63.2](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.63.1...v1.63.2) (2026-10-29)
 
 ### 🐛 Bug Fixes
