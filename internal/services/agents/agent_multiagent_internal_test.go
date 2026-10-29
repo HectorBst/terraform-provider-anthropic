@@ -114,7 +114,7 @@ func TestMapAgentResponseToState_multiagentAbsent(t *testing.T) {
 		agent := apiAgentWithMultiagent(t, raw)
 		data := AgentResourceModel{Multiagent: multiagentObj(t,
 			multiagentEntryObj(t, "self", types.StringNull(), types.Int64Null(), types.StringNull()))}
-		if d := mapAgentResponseToState(context.Background(), agent, &data); d.HasError() {
+		if d := mapAgentResponseToState(context.Background(), agent, &data, readMapping); d.HasError() {
 			t.Fatalf("diags: %+v", d)
 		}
 		if !data.Multiagent.IsNull() {
