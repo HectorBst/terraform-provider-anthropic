@@ -882,3 +882,46 @@ func TestExternalKeyResource_Update_displayNameNotCleared(t *testing.T) {
 		})
 	}
 }
+
+// An update planned from a value unknown at plan that resolves to the stored
+// one has nothing to send: the key is read instead of POSTing an empty body,
+// which the API may refuse.
+func TestExternalKeyResource_Update_nothingToSendReads(t *testing.T) {
+	var mu sync.Mutex
+	var calls []string
+	var bodies []int64
+	srv := newKeyServer(t, func(w http.ResponseWriter, r *http.Request, _ map[string]any) {
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		bodies = append(bodies, r.ContentLength)
+		mu.Unlock()
+		_, _ = io.WriteString(w, awsKeyFixture("attached"))
+	})
+
+	r := &ExternalKeyResource{client: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+	state := tfsdk.State{Schema: s, Raw: keyValue(t, awsStateTop("unattached"), awsStatePC())}
+	planTop := awsStateTop("unattached")
+	planTop["attachment"] = tftypes.UnknownValue
+	planTop["updated_at"] = tftypes.UnknownValue
+	plan := tfsdk.Plan{Schema: s, Raw: keyValue(t, planTop, awsStatePC())}
+
+	resp := resource.UpdateResponse{State: state}
+	r.Update(context.Background(), resource.UpdateRequest{Plan: plan, State: state}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update: %v", resp.Diagnostics)
+	}
+	if want := []string{"GET /v1/organizations/external_keys/" + testKeyID}; strings.Join(calls, ",") != strings.Join(want, ",") {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+	if bodies[0] > 0 {
+		t.Errorf("the read sent a body of %d bytes", bodies[0])
+	}
+	var data ExternalKeyModel
+	if diags := resp.State.Get(context.Background(), &data); diags.HasError() {
+		t.Fatalf("state: %v", diags)
+	}
+	if data.Attachment.ValueString() != "attached" {
+		t.Errorf("attachment = %v, want the value read back", data.Attachment)
+	}
+}

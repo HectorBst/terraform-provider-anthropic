@@ -291,13 +291,20 @@ func (r *ExternalKeyResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	respBytes, err := r.client.DoRequest(ctx, "POST", externalKeyPath(state.ID.ValueString()), body)
+	// A value unknown at plan can resolve to the stored one, leaving nothing
+	// to send. The reference documents no empty update, and the sibling
+	// workspace update answers one with a 400, so the key is read instead.
+	method, op, reqBody := "POST", "update", any(body)
+	if len(body) == 0 {
+		method, op, reqBody = "GET", "read", nil
+	}
+	respBytes, err := r.client.DoRequest(ctx, method, externalKeyPath(state.ID.ValueString()), reqBody)
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update external key: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to %s external key: %s", op, err))
 		return
 	}
 
-	r.setStateFromResponse(ctx, respBytes, "update", plan.ProviderConfig, &resp.State, &resp.Diagnostics)
+	r.setStateFromResponse(ctx, respBytes, op, plan.ProviderConfig, &resp.State, &resp.Diagnostics)
 	if !resp.Diagnostics.HasError() && plan.DisplayName.IsNull() && !state.DisplayName.IsNull() {
 		resp.Diagnostics.Append(checkDisplayNameCleared(ctx, resp.State, state.ID.ValueString())...)
 	}
