@@ -185,6 +185,8 @@ output "coordinator_roster_size" {
 - `always_ask`: the session pauses until your client approves or denies the call. MCP toolsets use it when no default is set, so tools added to an MCP server later do not run without approval.
 - `auto`: the server evaluates each call from the tool, its input and the session so far, then runs it, denies it (the agent gets an error tool result) or pauses for approval when it reaches no determination. No toolset uses it by default.
 
+Those defaults are what the API applies to a toolset sent without `default_permission_policy`. Removing the attribute from an existing toolset does not plan a change on its own, since the attribute is computed: to change the policy, set the value you want, `always_ask` for instance.
+
 `auto` is not a human checkpoint: a call the server judges safe runs before anyone sees it, and its effects might not be reversible. Keep `always_ask` on the tools whose calls a person must review. The server reads what your client posts in `user.message` events as your intent, so relaying untrusted end-user input there can get a call allowed. Permission policies do not apply to `custom_tools`, which your application runs.
 
 ## Web tool restrictions
@@ -234,7 +236,7 @@ Optional:
 
 - `configs` (Attributes List) Per-tool configuration overrides. The `web_fetch` and `web_search` entries also accept `allowed_domains` or `blocked_domains`, plus `max_content_tokens` (`web_fetch`) or `user_location` (`web_search`); setting one of these on another tool fails at plan time. (see [below for nested schema](#nestedatt--agent_toolset--configs))
 - `default_enabled` (Boolean) Whether tools are enabled by default. Defaults to `true`.
-- `default_permission_policy` (String) Default permission policy: `always_allow` (runs without confirmation), `always_ask` (waits for approval) or `auto` (the server evaluates each call and runs it, denies it or waits for approval; not a human checkpoint, since a call it judges safe runs before anyone sees it). The API applies `always_allow` when omitted.
+- `default_permission_policy` (String) Default permission policy: `always_allow` (runs without confirmation), `always_ask` (waits for approval) or `auto` (the server evaluates each call and runs it, denies it or waits for approval; not a human checkpoint, since a call it judges safe runs before anyone sees it). The API applies `always_allow` when omitted. Removing the attribute does not plan a change on its own: set the policy you want instead.
 
 <a id="nestedatt--agent_toolset--configs"></a>
 ### Nested Schema for `agent_toolset.configs`
@@ -298,7 +300,7 @@ Optional:
 
 - `configs` (Attributes List) Per-MCP-tool configuration overrides. (see [below for nested schema](#nestedatt--mcp_toolsets--configs))
 - `default_enabled` (Boolean) Whether MCP tools are enabled by default.
-- `default_permission_policy` (String) Default permission policy: `always_allow` (runs without confirmation), `always_ask` (waits for approval) or `auto` (the server evaluates each call and runs it, denies it or waits for approval; not a human checkpoint, since a call it judges safe runs before anyone sees it). The API applies `always_ask` when omitted, so tools added to the server later do not run without approval.
+- `default_permission_policy` (String) Default permission policy: `always_allow` (runs without confirmation), `always_ask` (waits for approval) or `auto` (the server evaluates each call and runs it, denies it or waits for approval; not a human checkpoint, since a call it judges safe runs before anyone sees it). The API applies `always_ask` when omitted, so tools added to the server later do not run without approval. Removing the attribute does not plan a change on its own: set `always_ask` to go back to it.
 
 <a id="nestedatt--mcp_toolsets--configs"></a>
 ### Nested Schema for `mcp_toolsets.configs`

@@ -333,10 +333,11 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 						MarkdownDescription: "Whether tools are enabled by default. Defaults to `true`.",
 					},
 					"default_permission_policy": schema.StringAttribute{
-						Optional:            true,
-						Computed:            true,
-						MarkdownDescription: "Default permission policy: " + permissionPolicyValuesDescription + ". The API applies `always_allow` when omitted.",
-						Validators:          []validator.String{permissionPolicyValidator},
+						Optional: true,
+						Computed: true,
+						MarkdownDescription: "Default permission policy: " + permissionPolicyValuesDescription + ". The API applies `always_allow` when omitted. " +
+							"Removing the attribute does not plan a change on its own: set the policy you want instead.",
+						Validators: []validator.String{permissionPolicyValidator},
 					},
 					"configs": schema.ListNestedAttribute{
 						Optional: true,
@@ -442,7 +443,8 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							Optional: true,
 							Computed: true,
 							MarkdownDescription: "Default permission policy: " + permissionPolicyValuesDescription + ". " +
-								"The API applies `always_ask` when omitted, so tools added to the server later do not run without approval.",
+								"The API applies `always_ask` when omitted, so tools added to the server later do not run without approval. " +
+								"Removing the attribute does not plan a change on its own: set `always_ask` to go back to it.",
 							Validators: []validator.String{permissionPolicyValidator},
 						},
 						"configs": schema.ListNestedAttribute{
