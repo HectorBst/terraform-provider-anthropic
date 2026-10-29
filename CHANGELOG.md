@@ -1,3 +1,9 @@
+## [1.62.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.62.0...v1.62.1) (2026-10-29)
+
+### 🐛 Bug Fixes
+
+* **deps:** update module golang.org/x/text to v0.42.0 ([#292](https://github.com/ippontech/terraform-provider-anthropic/issues/292)) ([2c3c0d0](https://github.com/ippontech/terraform-provider-anthropic/commit/2c3c0d093a6e4199002b317cfba892ea5bd19cf0))
+
 ## [1.62.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.61.1...v1.62.0) (2026-10-28)
 
 ### ✨ Features
