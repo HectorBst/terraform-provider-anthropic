@@ -1,3 +1,9 @@
+## [1.63.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.62.1...v1.63.0) (2026-10-29)
+
+### ✨ Features
+
+* **provider:** workspace_id argument sending the anthropic-workspace-id header ([#333](https://github.com/ippontech/terraform-provider-anthropic/issues/333)) ([d3548b6](https://github.com/ippontech/terraform-provider-anthropic/commit/d3548b68bd02ccd555d3a9c954ef3ecb1e8c0fd0)), closes [#322](https://github.com/ippontech/terraform-provider-anthropic/issues/322) [#283](https://github.com/ippontech/terraform-provider-anthropic/issues/283)
+
 ## [1.62.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.62.0...v1.62.1) (2026-10-29)
 
 ### 🐛 Bug Fixes
