@@ -776,3 +776,109 @@ func TestExternalKeyResource_ImportState(t *testing.T) {
 		}
 	}
 }
+
+// --- id on Claude Platform on AWS ---
+
+// On Claude Platform on AWS the ID is the KMS key ARN. When kms_arn changes,
+// whether the API keeps the old ARN as the ID is not documented, so the ID is
+// planned unknown rather than promised to dependents.
+func TestIDFollowsKMSARN(t *testing.T) {
+	r := &ExternalKeyResource{}
+	s := schematest.ResourceSchema(t, r)
+	const otherARN = "arn:aws:kms:us-west-2:111122223333:key/other"
+
+	arnTop := func(id string) map[string]any {
+		top := awsStateTop("unattached")
+		top["id"] = id
+		return top
+	}
+	pcWith := func(arn any) map[string]any {
+		return map[string]any{"type": "aws", "kms_arn": arn, "region": tftypes.UnknownValue}
+	}
+
+	cases := []struct {
+		name        string
+		stateID     string
+		planARN     any
+		wantUnknown bool
+	}{
+		{"ARN id, kms_arn changes", testKMSARN, otherARN, true},
+		{"ARN id, kms_arn unknown", testKMSARN, tftypes.UnknownValue, true},
+		{"ARN id, kms_arn unchanged", testKMSARN, testKMSARN, false},
+		{"ekey id, kms_arn changes", testKeyID, otherARN, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := tfsdk.State{Schema: s, Raw: keyValue(t, arnTop(tc.stateID), map[string]any{"type": "aws", "kms_arn": testKMSARN, "region": "us-east-1"})}
+			plan := tfsdk.Plan{Schema: s, Raw: keyValue(t, arnTop(tc.stateID), pcWith(tc.planARN))}
+			req := planmodifier.StringRequest{
+				Path: path.Root("id"), State: state, Plan: plan,
+				StateValue: types.StringValue(tc.stateID), PlanValue: types.StringValue(tc.stateID), ConfigValue: types.StringNull(),
+			}
+			resp := planmodifier.StringResponse{PlanValue: req.PlanValue}
+			idFollowsKMSARN{}.PlanModifyString(context.Background(), req, &resp)
+			if resp.Diagnostics.HasError() {
+				t.Fatal(resp.Diagnostics)
+			}
+			if resp.PlanValue.IsUnknown() != tc.wantUnknown {
+				t.Errorf("id planned %v, want unknown %v", resp.PlanValue, tc.wantUnknown)
+			}
+		})
+	}
+
+	t.Run("create", func(t *testing.T) {
+		req := planmodifier.StringRequest{
+			State: tfsdk.State{Schema: s, Raw: tftypes.NewValue(schematest.ResourceObjectType(t, r), nil)},
+			Plan:  tfsdk.Plan{Schema: s, Raw: keyValue(t, arnTop(testKMSARN), pcWith(otherARN))},
+			Path:  path.Root("id"), StateValue: types.StringNull(), PlanValue: types.StringUnknown(), ConfigValue: types.StringNull(),
+		}
+		resp := planmodifier.StringResponse{PlanValue: req.PlanValue}
+		idFollowsKMSARN{}.PlanModifyString(context.Background(), req, &resp)
+		if !resp.PlanValue.IsUnknown() || resp.Diagnostics.HasError() {
+			t.Errorf("create: planned %v (%v), want it left unknown", resp.PlanValue, resp.Diagnostics)
+		}
+	})
+}
+
+// --- display_name cleared ---
+
+// A display_name removed from the configuration is sent as null. If the API
+// keeps the name, Update says so instead of leaving Terraform to report an
+// inconsistent result for the planned null.
+func TestExternalKeyResource_Update_displayNameNotCleared(t *testing.T) {
+	for name, tc := range map[string]struct {
+		response string
+		wantErr  bool
+	}{
+		"cleared": {response: strings.Replace(awsKeyFixture("unattached"), `"prod-us-key"`, `null`, 1)},
+		"kept":    {response: awsKeyFixture("unattached"), wantErr: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var gotBody map[string]any
+			srv := newKeyServer(t, func(w http.ResponseWriter, _ *http.Request, body map[string]any) {
+				gotBody = body
+				_, _ = io.WriteString(w, tc.response)
+			})
+			r := &ExternalKeyResource{client: admintest.NewClient(t, srv)}
+			s := schematest.ResourceSchema(t, r)
+			state := tfsdk.State{Schema: s, Raw: keyValue(t, awsStateTop("unattached"), awsStatePC())}
+			planTop := awsStateTop("unattached")
+			planTop["display_name"] = nil
+			planTop["attachment"] = tftypes.UnknownValue
+			planTop["updated_at"] = tftypes.UnknownValue
+			plan := tfsdk.Plan{Schema: s, Raw: keyValue(t, planTop, awsStatePC())}
+
+			resp := resource.UpdateResponse{State: state}
+			r.Update(context.Background(), resource.UpdateRequest{Plan: plan, State: state}, &resp)
+			if want := `{"display_name":null}`; mustJSON(t, gotBody) != want {
+				t.Errorf("body = %s, want %s", mustJSON(t, gotBody), want)
+			}
+			if resp.Diagnostics.HasError() != tc.wantErr {
+				t.Fatalf("diagnostics = %v, want error %v", resp.Diagnostics, tc.wantErr)
+			}
+			if tc.wantErr && !strings.Contains(resp.Diagnostics.Errors()[0].Detail(), "prod-us-key") {
+				t.Errorf("detail = %q, want the kept name", resp.Diagnostics.Errors()[0].Detail())
+			}
+		})
+	}
+}

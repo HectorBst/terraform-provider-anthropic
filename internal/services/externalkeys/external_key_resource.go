@@ -121,7 +121,7 @@ func (r *ExternalKeyResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"id": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: idDescription,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown(), idFollowsKMSARN{}},
 			},
 			// No UseStateForUnknown: a workspace can attach the key between
 			// two applies, so the value an update returns is not the prior one.
@@ -298,6 +298,26 @@ func (r *ExternalKeyResource) Update(ctx context.Context, req resource.UpdateReq
 	}
 
 	r.setStateFromResponse(ctx, respBytes, "update", plan.ProviderConfig, &resp.State, &resp.Diagnostics)
+	if !resp.Diagnostics.HasError() && plan.DisplayName.IsNull() && !state.DisplayName.IsNull() {
+		resp.Diagnostics.Append(checkDisplayNameCleared(ctx, resp.State, state.ID.ValueString())...)
+	}
+}
+
+// checkDisplayNameCleared reports an error when the API kept the display_name
+// that the update sent as null to clear it. Whether the API clears a name on
+// null is not verified live; if it does not, an error that says so beats the
+// "inconsistent result after apply" Terraform would report for a planned
+// null. The state holds the API's name, so the next plan shows the diff again.
+func checkDisplayNameCleared(ctx context.Context, state tfsdk.State, id string) diag.Diagnostics {
+	var got types.String
+	diags := state.GetAttribute(ctx, path.Root("display_name"), &got)
+	if diags.HasError() || got.IsNull() {
+		return diags
+	}
+	diags.AddError("External key display_name not cleared", fmt.Sprintf(
+		"The update sent display_name = null to clear the name of external key %s, but the API kept %q. "+
+			"Set display_name in the configuration to keep a name.", id, got.ValueString()))
+	return diags
 }
 
 // --- Delete ---
@@ -635,6 +655,36 @@ func (providerConfigValidator) ValidateObject(ctx context.Context, req validator
 				fmt.Sprintf("%q must not be set when provider_config.type is %q.", f.name, providerType))
 		}
 	}
+}
+
+// --- id plan modifier ---
+
+// idFollowsKMSARN plans id as unknown when it is the key's KMS ARN, the ID
+// form on Claude Platform on AWS, and kms_arn changes: whether the API then
+// keeps the old ARN as the ID or moves it to the new one is not documented,
+// and planning the old ARN would make a new one an inconsistent result.
+type idFollowsKMSARN struct{}
+
+func (idFollowsKMSARN) Description(context.Context) string {
+	return "Plans an ARN-form ID as unknown when kms_arn changes."
+}
+
+func (m idFollowsKMSARN) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (idFollowsKMSARN) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() || !isKnown(req.StateValue) {
+		return
+	}
+	arn := path.Root("provider_config").AtName("kms_arn")
+	var stateARN, planARN types.String
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, arn, &stateARN)...)
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, arn, &planARN)...)
+	if resp.Diagnostics.HasError() || !isKnown(stateARN) || req.StateValue.ValueString() != stateARN.ValueString() || planARN.Equal(stateARN) {
+		return
+	}
+	resp.PlanValue = types.StringUnknown()
 }
 
 // --- region plan modifier ---
