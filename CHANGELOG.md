@@ -1,3 +1,9 @@
+## [1.63.1](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.63.0...v1.63.1) (2026-10-29)
+
+### 🐛 Bug Fixes
+
+* **federation:** map the read-back after a federation rule update ([#358](https://github.com/ippontech/terraform-provider-anthropic/issues/358)) ([29847cd](https://github.com/ippontech/terraform-provider-anthropic/commit/29847cd028e272c0923929ba737d4b9a095b31d2)), closes [#243](https://github.com/ippontech/terraform-provider-anthropic/issues/243)
+
 ## [1.63.0](https://github.com/ippontech/terraform-provider-anthropic/compare/v1.62.1...v1.63.0) (2026-10-29)
 
 ### ✨ Features
