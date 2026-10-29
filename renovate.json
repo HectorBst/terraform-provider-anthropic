@@ -8,6 +8,11 @@
   ],
   "labels": ["dependencies"],
   "platformAutomerge": true,
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "automerge": false,
+    "minimumReleaseAge": "3 days"
+  },
   "enabledManagers": [
     "github-actions",
     "gomod",
@@ -37,6 +42,13 @@
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "Go dependencies",
       "groupSlug": "go-deps"
+    },
+    {
+      "description": "Go toolchain and indirect module updates change the shipped binary like direct ones, so they get the fix type and semantic-release publishes a patch release with them. The :semanticPrefixFixDepsChoreOthers preset of config:recommended gives fix to the require depType only, chore (no release) to the rest. Root go.mod only: tools/go.mod feeds make generate and is not linked into the binary.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["go.mod"],
+      "matchDepTypes": ["toolchain", "indirect"],
+      "semanticCommitType": "fix"
     },
     {
       "matchManagers": ["mise"],
@@ -90,6 +102,21 @@
       "matchManagers": ["gomod"],
       "matchDepNames": ["github.com/anthropics/anthropic-sdk-go"],
       "allowedVersions": "<1.68.0"
+    },
+    {
+      "description": "Same hold for OSV vulnerability-fix PRs, whose own allowedVersions (appended after this list) replaces the one above. While the SDK is below v1.68.0, every minor or major update is v1.68.0+, so disable those; a fix in a 1.67.x patch still gets its PR. The rule stops matching once the SDK is at v1.68.0 or later. allowedVersions and matchUpdateTypes cannot share a rule.",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["github.com/anthropics/anthropic-sdk-go"],
+      "matchCurrentVersion": "<1.68.0",
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    },
+    {
+      "description": "Never propose a major SDK update, OSV vulnerability-fix PRs included (their allowedVersions replaces any hold above): a new major is the #192 migration, not a dependency bump.",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["github.com/anthropics/anthropic-sdk-go"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     },
     {
       "description": "Hold conventional-changelog-conventionalcommits below 9: 10.x needs conventional-changelog-writer@9, but the latest stable @semantic-release/release-notes-generator (14.1.1) pins writer ^8, so generateNotes fails with 'Missing helper'. Lift once release-notes-generator 15 ships with writer 9.",

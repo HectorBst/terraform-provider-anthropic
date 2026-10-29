@@ -15,6 +15,16 @@ mise install
 
 This installs the exact versions declared in `mise.toml`.
 
+### Go version
+
+CI and releases build with the Go release named by the `toolchain` line of `go.mod` (`actions/setup-go` reads it before the `go` line). Locally, a Go older than that downloads it on first use (the default `GOTOOLCHAIN=auto`), and a newer one, such as the Go from `mise.toml`, is used as is. Keep the `toolchain` line: it is what keeps fixed standard-library vulnerabilities out of the released binaries, and Renovate bumps it (see [`.github/renovate.md`](.github/renovate.md#go-version)).
+
+The `govulncheck` CI job fails a pull request that brings in a known vulnerability the code reaches; findings the base branch already has are listed in the job output without failing it. Its weekly run on `main` fails on any reachable vulnerability. To list them all locally, like the weekly run (standard-library findings refer to the Go that `go version` reports in the repository, which may be newer than the `toolchain` line):
+
+```bash
+go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+```
+
 ### Build and install the provider
 
 ```bash

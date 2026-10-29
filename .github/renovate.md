@@ -29,8 +29,10 @@ shows its recent runs and their logs.
 | `extends` | `config:recommended`, `:semanticCommits`, `:dependencyDashboard`, `:enablePreCommit` |
 | `labels` | `dependencies` |
 | `platformAutomerge` | Uses GitHub's own auto-merge, so branch protection and required checks are respected. This is already the default; kept explicit because the whole automerge policy depends on it |
+| `osvVulnerabilityAlerts` | Checks every dependency version in use against [OSV](https://osv.dev/) and opens a dedicated `[SECURITY]` fix PR, ungrouped. It also covers the Go modules marked `// indirect` in `go.mod`, which Renovate otherwise never updates, and the Go standard library through the `toolchain` directive (see [Go version](#go-version)). Experimental upstream |
+| `vulnerabilityAlerts` | Settings Renovate forces on those `[SECURITY]` PRs, over every package rule. `automerge: false`: a maintainer reviews and merges each one. `minimumReleaseAge: 3 days`: the cooldown every other update gets, which Renovate's defaults drop for security PRs ([docs](https://docs.renovatebot.com/key-concepts/minimum-release-age/#what-happens-to-security-updates)). Until then the fix waits under *Pending Status Checks* on the Dependency Dashboard, whose checkbox creates the PR at once |
 | `enabledManagers` | `github-actions`, `gomod`, `mise`, `pre-commit`, `custom.regex`, `npm` |
-| `customManagers` | One regex manager, see [Custom managers](#custom-managers) below |
+| `customManagers` | Two regex managers, see [Custom managers](#custom-managers) below |
 | `packageRules` | One grouped PR per manager, automerge for `minor` / `patch` / `pin` / `digest` updates after a 3-day `minimumReleaseAge` cooldown, except release tooling (see [Release tooling](#release-tooling)), plus a version hold on the Anthropic Go SDK (see [Version holds](#version-holds)) |
 
 Two of these entries are less obvious than they look:
@@ -103,6 +105,25 @@ maintainer reviews the release notes and the diff of each one before merging. Th
 not by package, so the same action used in other workflows (`actions/checkout`, say) keeps its
 automerged `GitHub Actions` group there; only its release-workflow occurrence waits for review.
 
+## Go version
+
+`go.mod` carries two Go versions, and Renovate treats them differently:
+
+| Directive | Meaning | Renovate |
+|---|---|---|
+| `go 1.26.2` | Language version: the oldest Go that can build the module, and the `GODEBUG` defaults compiled into the binary | Never proposes an update, by design ([gomod manager docs](https://docs.renovatebot.com/modules/manager/gomod/#updating-of-go-mod-and-toolchain-directives)). Raise it by hand, deliberately |
+| `toolchain go1.26.10` | The Go release CI tests with and releases are built with: `actions/setup-go` reads it before the `go` directive | Proposes updates by default, inside the `Go dependencies` group. `osvVulnerabilityAlerts` matches it against the standard-library advisories; it skips the `go` directive |
+
+Updates of the `toolchain` line (dependency type `toolchain`), and of the modules marked `// indirect`, are committed as `fix(deps)`, like direct modules, so semantic-release publishes a patch release that carries them. The `:semanticPrefixFixDepsChoreOthers` preset of `config:recommended` would type them `chore(deps)`, which publishes nothing ([preset](https://docs.renovatebot.com/presets-default/#semanticprefixfixdepschoreothers), [dependency types](https://docs.renovatebot.com/modules/manager/gomod/#dependency-types)). The `go` line (dependency type `golang`) keeps the preset's `chore(deps)`; Renovate does not propose updates to it anyway (see the table above). The rule matches the root `go.mod` only (`matchFileNames`): `tools/go.mod` feeds `make generate` and is not linked into the binary, so its indirect updates stay `chore(deps)`.
+
+The `toolchain` line is what keeps the standard-library vulnerabilities out of the released binaries, so
+leave it in place: `go mod tidy` removes it as soon as it is not newer than the `go` directive.
+
+Expect Renovate to propose the latest Go release for the toolchain, a minor update when a new Go minor is
+out. golangci-lint refuses to analyse a module whose toolchain is a newer Go minor than the one it was
+built with, so such a PR stays red on the `lint` job, and is not automerged, until the golangci-lint used
+by CI is built with that Go.
+
 ## Version holds
 
 One dependency is deliberately capped rather than tracked to latest:
@@ -118,15 +139,23 @@ provider does not compile against v1.68.0 (11 errors in `internal/services/skill
 GitHub's auto-merge is blocked. That is a lucky side effect, not a policy, and it would not hold for a
 release that changes behaviour without breaking the build.
 
-Two consequences worth knowing:
+Three consequences worth knowing:
 
 - `allowedVersions` filters the version out entirely, so the SDK will keep appearing **up to date** on
   the Dependency Dashboard. #192 is the reminder, not the dashboard.
 - Patch releases within `1.67.x` are still allowed and still automerge, matching the policy for every
   other Go dependency.
+- An `osvVulnerabilityAlerts` PR brings its own `allowedVersions` (the fixed versions), which Renovate
+  appends after `packageRules` and which replaces the cap. Two more rules keep the cap for those PRs
+  (`allowedVersions` and `matchUpdateTypes` cannot share a rule): one disables the SDK's `minor` and
+  `major` updates while its current version is below v1.68.0 (`matchCurrentVersion`), since from `1.67.x`
+  each of them is v1.68.0 or later; the other always disables `major` updates, a new major being the #192
+  migration. A fix released in a `1.67.x` patch still gets its `[SECURITY]` PR; a fix released only in
+  v1.68.0 or later gets none, the weekly `govulncheck` run reports it if the provider reaches the
+  vulnerable code, and it goes through #192.
 
-Remove the rule as part of #192, once the API rename has shipped and the migration is written — never on
-its own.
+Remove the cap as part of #192, once the API rename has shipped and the migration is written, never on
+its own. The `minor` rule stops matching by itself once the SDK is at v1.68.0 or later.
 
 ## Validating a config change
 
