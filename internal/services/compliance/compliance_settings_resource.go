@@ -147,6 +147,12 @@ func (r *ComplianceSettingsResource) Create(ctx context.Context, req resource.Cr
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	// On a mismatch nothing is stored, as for an API error: the next apply
+	// tries again and reports it again.
+	resp.Diagnostics.Append(stateNotApplied(plan.State.ValueString(), state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &ComplianceSettingsResourceModel{
 		ID:    types.StringValue(orgID),
@@ -161,6 +167,11 @@ func (r *ComplianceSettingsResource) Create(ctx context.Context, req resource.Cr
 func (r *ComplianceSettingsResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data ComplianceSettingsResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(r.checkOrganization(ctx, data.ID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -184,8 +195,15 @@ func (r *ComplianceSettingsResource) Read(ctx context.Context, req resource.Read
 // --- Update ---
 
 func (r *ComplianceSettingsResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan ComplianceSettingsResourceModel
+	var plan, prior ComplianceSettingsResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Checked again here, not only in Read, for an apply with -refresh=false.
+	resp.Diagnostics.Append(r.checkOrganization(ctx, prior.ID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -195,8 +213,10 @@ func (r *ComplianceSettingsResource) Update(ctx context.Context, req resource.Up
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	plan.State = types.StringValue(state)
+	// On a mismatch the planned value is kept along with the error, so the
+	// error says why instead of Terraform's inconsistent-result message; the
+	// next refresh reads the actual state.
+	resp.Diagnostics.Append(stateNotApplied(plan.State.ValueString(), state)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -226,13 +246,19 @@ func (r *ComplianceSettingsResource) Delete(ctx context.Context, req resource.De
 
 // ImportState accepts any ID, since the settings are addressed through the
 // admin key's organization rather than by ID; by convention, pass the
-// organization ID. The state's `id` is always the organization ID resolved
-// from the API, exactly as Create sets it.
-func (r *ComplianceSettingsResource) ImportState(ctx context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+// organization ID, and any other ID gets a warning naming the organization
+// imported. The state's `id` is always the organization ID resolved from the
+// API, exactly as Create sets it.
+func (r *ComplianceSettingsResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	orgID, diags := r.organizationID(ctx)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+	if req.ID != orgID {
+		resp.Diagnostics.AddWarning("Imported the admin key's organization",
+			fmt.Sprintf("The import ID %q is not the ID of the admin key's organization: the compliance settings of organization %s were imported. "+
+				"Check that the admin key belongs to the organization you meant to manage.", req.ID, orgID))
 	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), orgID)...)
 }
@@ -260,6 +286,39 @@ func (r *ComplianceSettingsResource) organizationID(ctx context.Context) (string
 		return "", diags
 	}
 	return org.ID, diags
+}
+
+// checkOrganization fails when the admin key belongs to another organization
+// than the one in state. The settings are addressed through the key alone, so
+// no 404 would reveal a key from another organization, and an apply would
+// switch that organization's Compliance API under the stored ID.
+func (r *ComplianceSettingsResource) checkOrganization(ctx context.Context, stateID types.String) diag.Diagnostics {
+	if stateID.IsNull() || stateID.IsUnknown() || stateID.ValueString() == "" {
+		return nil
+	}
+	orgID, diags := r.organizationID(ctx)
+	if diags.HasError() || orgID == stateID.ValueString() {
+		return diags
+	}
+	diags.AddError("Admin Key Of Another Organization",
+		fmt.Sprintf("The configured admin key belongs to organization %s, but this anthropic_compliance_settings manages organization %s. "+
+			"The settings are addressed through the admin key alone, so an apply would change the Compliance API of %s. "+
+			"Configure an admin key of organization %s, or remove the resource from the state and import it again to manage %s.",
+			orgID, stateID.ValueString(), orgID, stateID.ValueString(), orgID))
+	return diags
+}
+
+// stateNotApplied reports a POST that answered with another state than the
+// one sent.
+func stateNotApplied(planned, got string) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if got != planned {
+		diags.AddError("Compliance Settings Not Applied",
+			fmt.Sprintf("The API answered state %q after the provider set %q. "+
+				"An organization linked to a parent organization reads the parent's setting, which the parent's primary owner manages in claude.ai.",
+				got, planned))
+	}
+	return diags
 }
 
 // update sends the desired state in its canonical object form and returns the

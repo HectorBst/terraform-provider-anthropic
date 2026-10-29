@@ -36,6 +36,13 @@ type recordedRequest struct {
 // records each request.
 func newSettingsServer(t *testing.T, settingsBody string) (*httptest.Server, *[]recordedRequest) {
 	t.Helper()
+	return newOrgSettingsServer(t, testOrgID, settingsBody)
+}
+
+// newOrgSettingsServer is newSettingsServer for an admin key of organization
+// orgID.
+func newOrgSettingsServer(t *testing.T, orgID, settingsBody string) (*httptest.Server, *[]recordedRequest) {
+	t.Helper()
 	var mu sync.Mutex
 	var reqs []recordedRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +54,7 @@ func newSettingsServer(t *testing.T, settingsBody string) (*httptest.Server, *[]
 		w.Header().Set("content-type", "application/json")
 		switch r.URL.Path {
 		case "/v1/organizations/me":
-			_, _ = io.WriteString(w, `{"id":"`+testOrgID+`","name":"Test Organization","type":"organization"}`)
+			_, _ = io.WriteString(w, `{"id":"`+orgID+`","name":"Test Organization","type":"organization"}`)
 		case "/v1/organizations/compliance_settings":
 			_, _ = io.WriteString(w, settingsBody)
 		default:
@@ -153,8 +160,9 @@ func TestComplianceSettingsResource_Read(t *testing.T) {
 			if resp.Diagnostics.HasError() {
 				t.Fatalf("Read: %v", resp.Diagnostics)
 			}
-			if len(*reqs) != 1 || (*reqs)[0].method != http.MethodGet || (*reqs)[0].path != "/v1/organizations/compliance_settings" {
-				t.Errorf("requests = %+v, want a single GET of the settings", *reqs)
+			if len(*reqs) != 2 || (*reqs)[0].path != "/v1/organizations/me" ||
+				(*reqs)[1].method != http.MethodGet || (*reqs)[1].path != "/v1/organizations/compliance_settings" {
+				t.Errorf("requests = %+v, want GET /me then a GET of the settings", *reqs)
 			}
 
 			var data ComplianceSettingsResourceModel
@@ -222,10 +230,10 @@ func TestComplianceSettingsResource_Update(t *testing.T) {
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("Update: %v", resp.Diagnostics)
 	}
-	if len(*reqs) != 1 || (*reqs)[0].method != http.MethodPost {
-		t.Fatalf("requests = %+v, want a single POST", *reqs)
+	if len(*reqs) != 2 || (*reqs)[0].path != "/v1/organizations/me" || (*reqs)[1].method != http.MethodPost {
+		t.Fatalf("requests = %+v, want GET /me then a POST", *reqs)
 	}
-	if b, _ := json.Marshal((*reqs)[0].body); string(b) != `{"state":{"type":"disabled"}}` {
+	if b, _ := json.Marshal((*reqs)[1].body); string(b) != `{"state":{"type":"disabled"}}` {
 		t.Errorf("body = %s", b)
 	}
 
@@ -262,7 +270,7 @@ func TestComplianceSettingsResource_Delete_leavesSettingsAlone(t *testing.T) {
 // --- ImportState ---
 
 func TestComplianceSettingsResource_ImportState(t *testing.T) {
-	for _, importID := range []string{testOrgID, "compliance_settings"} {
+	for importID, warnings := range map[string]int{testOrgID: 0, "compliance_settings": 1} {
 		t.Run(importID, func(t *testing.T) {
 			srv, _ := newSettingsServer(t, `{}`)
 			r := &ComplianceSettingsResource{client: admintest.NewClient(t, srv)}
@@ -275,6 +283,9 @@ func TestComplianceSettingsResource_ImportState(t *testing.T) {
 			var id string
 			if diags := resp.State.GetAttribute(context.Background(), path.Root("id"), &id); diags.HasError() || id != testOrgID {
 				t.Errorf("imported id = %q, want the organization ID %q (%v)", id, testOrgID, diags)
+			}
+			if got := resp.Diagnostics.WarningsCount(); got != warnings {
+				t.Errorf("warnings = %d, want %d (an ID other than the organization's names the one imported): %v", got, warnings, resp.Diagnostics)
 			}
 		})
 	}
@@ -293,5 +304,95 @@ func TestComplianceSettingsResource_ImportState_organizationError(t *testing.T) 
 	r.ImportState(context.Background(), resource.ImportStateRequest{ID: testOrgID}, &resp)
 	if !resp.Diagnostics.HasError() {
 		t.Fatal("expected an error when the organization cannot be read")
+	}
+}
+
+// --- Admin key of another organization ---
+
+const otherOrgID = "87654321-4321-8765-4321-876543218765"
+
+// Read fails, without reading the settings, when the admin key belongs to
+// another organization than the stored id: the singleton is addressed through
+// the key alone, so nothing else would notice.
+func TestComplianceSettingsResource_Read_otherOrganizationFails(t *testing.T) {
+	srv, reqs := newOrgSettingsServer(t, otherOrgID, `{"type":"compliance_settings","state":{"type":"enabled"}}`)
+	r := &ComplianceSettingsResource{client: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+	state := tfsdk.State{Schema: s, Raw: settingsValue(t, testOrgID, "disabled")}
+
+	resp := resource.ReadResponse{State: state}
+	r.Read(context.Background(), resource.ReadRequest{State: state}, &resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("expected an error for an admin key of another organization")
+	}
+	for _, req := range *reqs {
+		if req.path == "/v1/organizations/compliance_settings" {
+			t.Errorf("requests = %+v, want no settings call", *reqs)
+		}
+	}
+}
+
+// Update checks the organization before the POST too, for an apply with
+// -refresh=false, and sends nothing on a mismatch.
+func TestComplianceSettingsResource_Update_otherOrganizationFails(t *testing.T) {
+	srv, reqs := newOrgSettingsServer(t, otherOrgID, `{"type":"compliance_settings","state":{"type":"disabled"}}`)
+	r := &ComplianceSettingsResource{client: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+	state := tfsdk.State{Schema: s, Raw: settingsValue(t, testOrgID, "enabled")}
+	plan := tfsdk.Plan{Schema: s, Raw: settingsValue(t, testOrgID, "disabled")}
+
+	resp := resource.UpdateResponse{State: state}
+	r.Update(context.Background(), resource.UpdateRequest{Plan: plan, State: state}, &resp)
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("expected an error for an admin key of another organization")
+	}
+	for _, req := range *reqs {
+		if req.method == http.MethodPost {
+			t.Errorf("requests = %+v, want no POST", *reqs)
+		}
+	}
+}
+
+// --- POST answering another state ---
+
+// Create reports a POST that answers another state than the planned one
+// with its own error, and stores nothing, as for an API error.
+func TestComplianceSettingsResource_Create_stateNotApplied(t *testing.T) {
+	srv, _ := newSettingsServer(t, `{"type":"compliance_settings","state":{"type":"enabled"}}`)
+	r := &ComplianceSettingsResource{client: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+
+	resp := resource.CreateResponse{State: tfsdk.State{Schema: s}}
+	r.Create(context.Background(), resource.CreateRequest{
+		Plan: tfsdk.Plan{Schema: s, Raw: settingsValue(t, tftypes.UnknownValue, "disabled")},
+	}, &resp)
+	if !resp.Diagnostics.HasError() || resp.Diagnostics[0].Summary() != "Compliance Settings Not Applied" {
+		t.Fatalf("diagnostics = %v, want a Compliance Settings Not Applied error", resp.Diagnostics)
+	}
+	if !resp.State.Raw.IsNull() {
+		t.Error("state must stay empty when the state was not applied")
+	}
+}
+
+// Update reports the mismatch with its own error and keeps the planned value,
+// so Terraform does not add its inconsistent-result error on top.
+func TestComplianceSettingsResource_Update_stateNotApplied(t *testing.T) {
+	srv, _ := newSettingsServer(t, `{"type":"compliance_settings","state":{"type":"enabled"}}`)
+	r := &ComplianceSettingsResource{client: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+	state := tfsdk.State{Schema: s, Raw: settingsValue(t, testOrgID, "enabled")}
+	plan := tfsdk.Plan{Schema: s, Raw: settingsValue(t, testOrgID, "disabled")}
+
+	resp := resource.UpdateResponse{State: state}
+	r.Update(context.Background(), resource.UpdateRequest{Plan: plan, State: state}, &resp)
+	if !resp.Diagnostics.HasError() || resp.Diagnostics[0].Summary() != "Compliance Settings Not Applied" {
+		t.Fatalf("diagnostics = %v, want a Compliance Settings Not Applied error", resp.Diagnostics)
+	}
+	var data ComplianceSettingsResourceModel
+	if diags := resp.State.Get(context.Background(), &data); diags.HasError() {
+		t.Fatalf("state: %v", diags)
+	}
+	if data.State.ValueString() != "disabled" {
+		t.Errorf("state = %q, want the planned value", data.State.ValueString())
 	}
 }
