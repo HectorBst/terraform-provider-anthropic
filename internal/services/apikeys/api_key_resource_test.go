@@ -11,7 +11,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -449,6 +452,59 @@ func TestAPIKeyResource_UpdateKeepsLegacyEmptyValues(t *testing.T) {
 	}
 	if got := data.Name.ValueString(); got != "Renamed" {
 		t.Errorf("name = %q, want Renamed", got)
+	}
+}
+
+// A state written before scope, principal and expires_at existed holds null
+// for them. When an update skips the refresh (-refresh=false), they must be
+// planned unknown, not null: Update writes the API's values, and a planned
+// null would make that an inconsistent result after apply.
+func TestAPIKeyResource_newAttributesPlanUnknownOverLegacyState(t *testing.T) {
+	ctx := context.Background()
+	r := &APIKeyResource{}
+	s := schematest.ResourceSchema(t, r)
+	objType := schematest.ResourceObjectType(t, r)
+	vals := schematest.NullValues(t, r)
+	vals["id"] = tftypes.NewValue(tftypes.String, "apikey_01LEGACY")
+	vals["name"] = tftypes.NewValue(tftypes.String, "Legacy key")
+	vals["status"] = tftypes.NewValue(tftypes.String, "active")
+	state := tfsdk.State{Raw: tftypes.NewValue(objType, vals), Schema: s}
+	plan := tfsdk.Plan{Raw: state.Raw, Schema: s}
+
+	for _, name := range []string{"scope", "principal", "expires_at"} {
+		t.Run(name, func(t *testing.T) {
+			switch a := s.Attributes[name].(type) {
+			case schema.SingleNestedAttribute:
+				attrTypes := a.GetType().(types.ObjectType).AttrTypes
+				req := planmodifier.ObjectRequest{
+					Path: path.Root(name), State: state, Plan: plan,
+					StateValue: types.ObjectNull(attrTypes), ConfigValue: types.ObjectNull(attrTypes), PlanValue: types.ObjectUnknown(attrTypes),
+				}
+				resp := planmodifier.ObjectResponse{PlanValue: req.PlanValue}
+				for _, m := range a.PlanModifiers {
+					m.PlanModifyObject(ctx, req, &resp)
+					req.PlanValue = resp.PlanValue
+				}
+				if !resp.PlanValue.IsUnknown() {
+					t.Errorf("planned %v, want unknown", resp.PlanValue)
+				}
+			case schema.StringAttribute:
+				req := planmodifier.StringRequest{
+					Path: path.Root(name), State: state, Plan: plan,
+					StateValue: types.StringNull(), ConfigValue: types.StringNull(), PlanValue: types.StringUnknown(),
+				}
+				resp := planmodifier.StringResponse{PlanValue: req.PlanValue}
+				for _, m := range a.PlanModifiers {
+					m.PlanModifyString(ctx, req, &resp)
+					req.PlanValue = resp.PlanValue
+				}
+				if !resp.PlanValue.IsUnknown() {
+					t.Errorf("planned %v, want unknown", resp.PlanValue)
+				}
+			default:
+				t.Fatalf("%s is %T", name, s.Attributes[name])
+			}
+		})
 	}
 }
 

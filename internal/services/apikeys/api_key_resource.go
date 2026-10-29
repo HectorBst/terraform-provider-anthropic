@@ -192,7 +192,12 @@ func (r *APIKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"scope": schema.SingleNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: apiKeyScopeDescription,
-				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+				// scope, principal and expires_at did not exist before: in a
+				// state written by an older version they are null, and
+				// UseStateForUnknown would plan that null, which Update's
+				// values then contradict when the refresh is skipped
+				// (-refresh=false). A null prior value plans as unknown.
+				PlanModifiers: []planmodifier.Object{objectplanmodifier.UseNonNullStateForUnknown()},
 				Attributes: map[string]schema.Attribute{
 					"type": schema.StringAttribute{
 						Computed:            true,
@@ -207,7 +212,7 @@ func (r *APIKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"principal": schema.SingleNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: apiKeyPrincipalDescription,
-				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseNonNullStateForUnknown()},
 				Attributes: map[string]schema.Attribute{
 					"type": schema.StringAttribute{
 						Computed:            true,
@@ -226,7 +231,7 @@ func (r *APIKeyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"expires_at": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: apiKeyExpiresAtDescription,
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseNonNullStateForUnknown()},
 			},
 			"created_at": schema.StringAttribute{
 				Computed:            true,
