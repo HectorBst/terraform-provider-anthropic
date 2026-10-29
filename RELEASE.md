@@ -38,7 +38,7 @@ sec   rsa4096/AAAA1111BBBB2222 2024-01-01 [SC]
 
 ## Configure GitHub secrets
 
-Add the following secrets to the GitHub repository (`Settings > Secrets and variables > Actions`):
+Add the following secrets to the **`release` environment** (`Settings > Environments > release > Environment secrets`), never at repository or organization level: a repository secret is readable by a workflow pushed on any branch. The environment itself is set up in [Protect the release credentials](#protect-the-release-credentials).
 
 | Secret | Command to get the value |
 |--------|--------------------------|
@@ -97,7 +97,7 @@ On the app's settings page → **Install App** → select your org/account → *
 
 ## Configure GitHub secrets
 
-Add the following secrets to the repository (`Settings > Secrets and variables > Actions`):
+Add the following secrets to the **`semantic-release` environment** (`Settings > Environments > semantic-release > Environment secrets`), never at repository or organization level, for the same reason as the GPG key:
 
 | Secret                   | Value                                      |
 |--------------------------|--------------------------------------------|
@@ -114,6 +114,42 @@ This allows the App to push directly to `main` without going through the PR/merg
 4. Select type **GitHub App**, search for and select the app created above
 5. Set the bypass mode to **Always**
 6. Save
+
+# Protect the release credentials
+
+The GPG key signs what every user installs, and the App bypasses the `main` ruleset. Write access to the repository must not be enough to use either: a collaborator, or a stolen collaborator token, can push a workflow file on a new branch, and that workflow receives every repository secret; and any write collaborator can push a `v*` tag on an arbitrary commit, which starts the release job. Three settings close this. The workflows already declare the environments, so they keep working at every step of the setup below (a job falls back to the repository secret while its environment has none).
+
+## Environments
+
+Create two environments (`Settings > Environments > New environment`):
+
+| Environment | Used by | Deployment branches and tags | Secrets |
+|---|---|---|---|
+| `release` | `goreleaser-release.yml` | **Selected branches and tags**, one tag rule `v*` and no branch rule | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` |
+| `semantic-release` | `semantic-release.yml` | **Selected branches and tags**, one branch rule `main` | `SEMREL_APP_ID`, `SEMREL_APP_PRIVATE_KEY` |
+
+On `release`, also tick **Required reviewers** and add the maintainers: every signed release then waits for one approval in the Actions UI, which is the only control that holds even if a tag slips through. Leave **Allow administrators to bypass** unticked.
+
+Then **delete the four secrets at repository level** (`Settings > Secrets and variables > Actions`), and check that no organization secret carries them. Until they are deleted, the environments protect nothing.
+
+## Tag ruleset
+
+Create a tag ruleset (`Settings > Rules > Rulesets > New ruleset > New tag ruleset`):
+
+1. Name it `release-tags`, enforcement **Active**.
+2. Target tags: include by pattern `v*`.
+3. Rules: **Restrict creations**, **Restrict updates**, **Restrict deletions**.
+4. Bypass list: the semantic-release App only, mode **Always**. No role, team or collaborator.
+
+semantic-release keeps tagging releases; nobody else can create, move or delete a `v*` tag.
+
+## Check
+
+1. Push a branch with a workflow that prints `${{ secrets.GPG_PASSPHRASE != '' }}`: it must print `false`. Delete the branch.
+2. From a collaborator account, `git push origin <any-commit>:refs/tags/v9.9.9`: GitHub must refuse it.
+3. On the next release, the `goreleaser-release` run waits for a reviewer before its job starts.
+
+The release job also refuses a tagged commit that is not on `main` (`git merge-base --is-ancestor`). That check is defence in depth only: a tag-triggered run reads its workflow file from the tagged commit, so whoever can tag an arbitrary commit can remove the check too.
 
 # Major versions
 
@@ -136,6 +172,6 @@ The first major planned this way is 2.0.0; candidates are the issues labelled as
 3. Open a PR `major/2.0.0` → `main` and merge it with a **merge commit**. semantic-release then analyses every commit since the last `v1.x` tag, finds the `BREAKING CHANGE:` footers, publishes a single `v2.0.0` and lists each breaking change in the release notes and in `CHANGELOG.md`.
 4. Restore the `main` ruleset (squash only, linear history, merge queue) and delete `major/2.0.0`.
 
-If a `1.x` maintenance line is needed after 2.0.0, create `1.x` from the last `v1.*` tag, add it to the workflow trigger and to `.releaserc` (`"branches": ["1.x", "main"]`); semantic-release then restricts it to `1.*` versions and refuses anything that would collide with `main`.
+If a `1.x` maintenance line is needed after 2.0.0, create `1.x` from the last `v1.*` tag, add it to the workflow trigger and to `.releaserc` (`"branches": ["1.x", "main"]`); semantic-release then restricts it to `1.*` versions and refuses anything that would collide with `main`. Two of the release-credential guards admit `main` only and must be widened at the same time, or `1.x` gets no release and no signed artifacts: add a `1.x` branch rule to the deployment branches of the `semantic-release` environment (`Settings > Environments`), and extend the "Check the tagged commit is on main" step of `goreleaser-release.yml` to accept a commit on `1.x` as well.
 
 Pre-releases (`2.0.0-beta.N`, the approach the AWS provider used on `release/6.0.0-beta`) are deliberately not part of this process: they would require `@semantic-release/git` to commit `CHANGELOG.md` on the staging branch, which conflicts on every sync with `main`. Revisit only if users ask to test a beta from the Registry.
