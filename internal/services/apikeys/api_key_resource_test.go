@@ -372,8 +372,13 @@ func TestMapAPIKeyToState_nullableFieldsMapToNull(t *testing.T) {
 	if !data.Principal.IsNull() {
 		t.Errorf("Principal = %v, want null", data.Principal)
 	}
-	if !data.CreatedBy.IsNull() {
-		t.Errorf("CreatedBy = %v, want null", data.CreatedBy)
+	// created_by stays an object, so that a configuration reading
+	// created_by.id gets null instead of failing on a null object.
+	if id := objectString(t, data.CreatedBy, "id"); !id.IsNull() {
+		t.Errorf("CreatedBy.id = %v, want null", id)
+	}
+	if typ := objectString(t, data.CreatedBy, "type"); !typ.IsNull() {
+		t.Errorf("CreatedBy.type = %v, want null", typ)
 	}
 	if !data.PartialKeyHint.IsNull() {
 		t.Errorf("PartialKeyHint = %q, want null", data.PartialKeyHint.ValueString())
@@ -383,6 +388,67 @@ func TestMapAPIKeyToState_nullableFieldsMapToNull(t *testing.T) {
 	}
 	if got := data.WorkspaceID.ValueString(); got != "wrkspc_01WS" {
 		t.Errorf("WorkspaceID = %q, want wrkspc_01WS", got)
+	}
+}
+
+// State written before null mapping holds created_by = {id = "", type = ""}
+// and partial_key_hint = "" for a key with no recorded creator or hint.
+// Under -refresh=false UseStateForUnknown plans them as they are, so Update
+// must return them unchanged although the API now sends null: anything else
+// is an inconsistent result after apply.
+func TestAPIKeyResource_UpdateKeepsLegacyEmptyValues(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/organizations/api_keys/apikey_01LEGACY" {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id": "apikey_01LEGACY", "name": "Renamed", "status": "active", "workspace_id": "wrkspc_01WS",
+			"scope": {"type": "workspace", "workspace_id": "wrkspc_01WS"}, "principal": null,
+			"expires_at": null, "created_at": "2024-01-01T00:00:00Z",
+			"created_by": null, "partial_key_hint": null, "type": "api_key"
+		}`)
+	}))
+	defer srv.Close()
+
+	r := &APIKeyResource{adminClient: admintest.NewClient(t, srv)}
+	s := schematest.ResourceSchema(t, r)
+	objType := schematest.ResourceObjectType(t, r)
+	createdByType := objType.AttributeTypes["created_by"]
+	vals := schematest.NullValues(t, r)
+	vals["id"] = tftypes.NewValue(tftypes.String, "apikey_01LEGACY")
+	vals["name"] = tftypes.NewValue(tftypes.String, "Legacy key")
+	vals["status"] = tftypes.NewValue(tftypes.String, "active")
+	vals["created_by"] = tftypes.NewValue(createdByType, map[string]tftypes.Value{
+		"id":   tftypes.NewValue(tftypes.String, ""),
+		"type": tftypes.NewValue(tftypes.String, ""),
+	})
+	vals["partial_key_hint"] = tftypes.NewValue(tftypes.String, "")
+	state := tfsdk.State{Raw: tftypes.NewValue(objType, vals), Schema: s}
+	vals["name"] = tftypes.NewValue(tftypes.String, "Renamed")
+	plan := tfsdk.Plan{Raw: tftypes.NewValue(objType, vals), Schema: s}
+
+	resp := resource.UpdateResponse{State: tfsdk.State{Raw: plan.Raw, Schema: s}}
+	r.Update(context.Background(), resource.UpdateRequest{Plan: plan, State: state}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned errors: %v", resp.Diagnostics)
+	}
+
+	var data APIKeyResourceModel
+	if diags := resp.State.Get(context.Background(), &data); diags.HasError() {
+		t.Fatalf("state: %v", diags)
+	}
+	if got := data.PartialKeyHint; !got.Equal(types.StringValue("")) {
+		t.Errorf("partial_key_hint = %v, want the planned \"\"", got)
+	}
+	for _, name := range []string{"id", "type"} {
+		if got := objectString(t, data.CreatedBy, name); !got.Equal(types.StringValue("")) {
+			t.Errorf("created_by.%s = %v, want the planned \"\"", name, got)
+		}
+	}
+	if got := data.Name.ValueString(); got != "Renamed" {
+		t.Errorf("name = %q, want Renamed", got)
 	}
 }
 

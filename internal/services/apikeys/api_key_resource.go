@@ -102,7 +102,7 @@ const apiKeyPrincipalDescription = "The principal the API key acts as: `type = \
 
 const apiKeyExpiresAtDescription = "RFC 3339 timestamp at which the API key expires, or null if it never expires."
 
-const apiKeyCreatedByDescription = "The actor that created this API key, or null when the creator is not recorded " +
+const apiKeyCreatedByDescription = "The actor that created this API key. `id` and `type` are null when the creator is not recorded " +
 	"(legacy, workload-identity-federated or system-created keys)."
 
 const apiKeyPartialKeyHintDescription = "Partially redacted hint of the API key, for identification. Null when the API returns none."
@@ -361,10 +361,12 @@ func (r *APIKeyResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
+	planned := plan
 	resp.Diagnostics.Append(mapAPIKeyToState(ctx, &key, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	keepLegacyEmptyValues(&plan, planned)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -397,8 +399,9 @@ func (r *APIKeyResource) ImportState(ctx context.Context, req resource.ImportSta
 // ============================================================================
 
 // mapAPIKeyToState maps an API key response to the Terraform state model.
-// Nullable fields (workspace_id, expires_at, created_by, principal,
-// partial_key_hint) map to null rather than to empty strings.
+// Nullable fields (workspace_id, expires_at, principal, partial_key_hint,
+// and the id and type of created_by) map to null rather than to empty
+// strings.
 func mapAPIKeyToState(_ context.Context, key *apiKeyAPIResponse, data *APIKeyResourceModel) diag.Diagnostics {
 	var diags diag.Diagnostics
 
@@ -427,14 +430,42 @@ func mapAPIKeyToState(_ context.Context, key *apiKeyAPIResponse, data *APIKeyRes
 	return diags
 }
 
+// apiKeyCreatedByValue maps created_by. A key with no recorded creator (the
+// API sends "created_by": null) still gets an object, with a null id and
+// type: created_by has always been an object, holding empty strings before,
+// and a configuration that reads created_by.id would fail on a null object
+// ("Attempt to get attribute from null value").
 func apiKeyCreatedByValue(c *apiKeyCreatedBy) (types.Object, diag.Diagnostics) {
 	if c == nil {
-		return types.ObjectNull(apiKeyCreatedByAttrTypes), nil
+		return types.ObjectValue(apiKeyCreatedByAttrTypes, map[string]attr.Value{
+			"id":   types.StringNull(),
+			"type": types.StringNull(),
+		})
 	}
 	return types.ObjectValue(apiKeyCreatedByAttrTypes, map[string]attr.Value{
 		"id":   types.StringValue(c.ID),
 		"type": types.StringValue(c.Type),
 	})
+}
+
+// keepLegacyEmptyValues keeps, in data, the empty created_by and
+// partial_key_hint that planned holds where the API now sends null. State
+// written before null mapping holds {id = "", type = ""} and "" for a key
+// with no recorded creator or hint; UseStateForUnknown plans them as they
+// are when the refresh is skipped (-refresh=false), and writing null back
+// from Update would be an inconsistent result. The next refresh replaces
+// them.
+func keepLegacyEmptyValues(data *APIKeyResourceModel, planned APIKeyResourceModel) {
+	if data.PartialKeyHint.IsNull() && planned.PartialKeyHint.Equal(types.StringValue("")) {
+		data.PartialKeyHint = planned.PartialKeyHint
+	}
+	legacyCreatedBy := types.ObjectValueMust(apiKeyCreatedByAttrTypes, map[string]attr.Value{
+		"id":   types.StringValue(""),
+		"type": types.StringValue(""),
+	})
+	if noCreator, _ := apiKeyCreatedByValue(nil); data.CreatedBy.Equal(noCreator) && planned.CreatedBy.Equal(legacyCreatedBy) {
+		data.CreatedBy = planned.CreatedBy
+	}
 }
 
 func apiKeyScopeValue(s *apiKeyScope) (types.Object, diag.Diagnostics) {

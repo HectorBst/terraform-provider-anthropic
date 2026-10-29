@@ -60,7 +60,7 @@ output "api_key_partial_hint" {
 ### Read-Only
 
 - `created_at` (String) RFC 3339 timestamp of when the API key was created.
-- `created_by` (Attributes) The actor that created this API key, or null when the creator is not recorded (legacy, workload-identity-federated or system-created keys). (see [below for nested schema](#nestedatt--created_by))
+- `created_by` (Attributes) The actor that created this API key. `id` and `type` are null when the creator is not recorded (legacy, workload-identity-federated or system-created keys). (see [below for nested schema](#nestedatt--created_by))
 - `expires_at` (String) RFC 3339 timestamp at which the API key expires, or null if it never expires.
 - `name` (String) Human-readable name of the API key.
 - `partial_key_hint` (String) Partially redacted hint of the API key, for identification. Null when the API returns none.
