@@ -324,8 +324,9 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 						Validators: []validator.String{permissionPolicyValidator},
 					},
 					"configs": schema.ListNestedAttribute{
-						Optional:            true,
-						MarkdownDescription: "Per-tool configuration overrides.",
+						Optional: true,
+						MarkdownDescription: "Per-tool configuration overrides. " +
+							"When unset or empty, an update sends an empty list, which removes any override set outside Terraform.",
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"name": schema.StringAttribute{
@@ -376,8 +377,9 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							Validators: []validator.String{permissionPolicyValidator},
 						},
 						"configs": schema.ListNestedAttribute{
-							Optional:            true,
-							MarkdownDescription: "Per-MCP-tool configuration overrides.",
+							Optional: true,
+							MarkdownDescription: "Per-MCP-tool configuration overrides. " +
+								"When unset or empty, an update sends an empty list, which removes any override set outside Terraform.",
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
 									"name": schema.StringAttribute{
@@ -718,16 +720,7 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// Convert BetaAgentNewParamsToolUnion to BetaAgentUpdateParamsToolUnion
-	updateTools := make([]anthropic.BetaAgentUpdateParamsToolUnion, len(createTools))
-	for i, t := range createTools {
-		updateTools[i] = anthropic.BetaAgentUpdateParamsToolUnion{
-			OfAgentToolset20260401: t.OfAgentToolset20260401,
-			OfMCPToolset:           t.OfMCPToolset,
-			OfCustom:               t.OfCustom,
-		}
-	}
-	params.Tools = updateTools
+	params.Tools = updateToolsParams(createTools)
 
 	// Multiagent: clearing must send an explicit null, an omitted field keeps the roster.
 	multiagent, diags := buildMultiagentParams(ctx, data.Multiagent, state.Multiagent)
@@ -993,6 +986,34 @@ func buildToolsParams(ctx context.Context, data AgentResourceModel) ([]anthropic
 	}
 
 	return tools, diags
+}
+
+// updateToolsParams converts the tools built by buildToolsParams into the update
+// union, and gives every toolset planned without per-tool configs (null or
+// empty) an explicit empty `configs`, as Update does for `skills`. The update
+// reference says `tools` is a "Full replacement" but nothing about a toolset's
+// omitted `configs`; if the API kept the stored per-tool overrides, one set out
+// of band (an `always_allow` on one tool, which Read reports as drift) would
+// survive every apply. The configuration declares no override, so an empty list
+// is right whatever the API does with an omitted field. The SDK drops a nil
+// slice (`omitzero`) but sends an empty one as `[]`. Create keeps omitting it:
+// nothing is stored yet.
+func updateToolsParams(tools []anthropic.BetaAgentNewParamsToolUnion) []anthropic.BetaAgentUpdateParamsToolUnion {
+	updateTools := make([]anthropic.BetaAgentUpdateParamsToolUnion, len(tools))
+	for i, t := range tools {
+		if ts := t.OfAgentToolset20260401; ts != nil && ts.Configs == nil {
+			ts.Configs = []anthropic.BetaManagedAgentsAgentToolConfigParamsUnion{}
+		}
+		if ts := t.OfMCPToolset; ts != nil && ts.Configs == nil {
+			ts.Configs = []anthropic.BetaManagedAgentsMCPToolConfigParams{}
+		}
+		updateTools[i] = anthropic.BetaAgentUpdateParamsToolUnion{
+			OfAgentToolset20260401: t.OfAgentToolset20260401,
+			OfMCPToolset:           t.OfMCPToolset,
+			OfCustom:               t.OfCustom,
+		}
+	}
+	return updateTools
 }
 
 // mappingMode tells mapAgentResponseToState which request the response answers.

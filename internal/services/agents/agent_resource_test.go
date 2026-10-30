@@ -216,6 +216,13 @@ func TestAccAgentResource_withAgentToolset(t *testing.T) {
 					resource.TestCheckNoResourceAttr("anthropic_agent.test_toolset", "agent_toolset.configs.0.enabled"),
 				),
 			},
+			// Removing `configs` sends an empty list on update (#508). The
+			// post-apply plan must be empty: the refresh would report the bash
+			// override as drift if the API had kept it.
+			{
+				Config: testAccAgentResourceWithToolsetConfig,
+				Check:  resource.TestCheckNoResourceAttr("anthropic_agent.test_toolset", "agent_toolset.configs.#"),
+			},
 		},
 	})
 }

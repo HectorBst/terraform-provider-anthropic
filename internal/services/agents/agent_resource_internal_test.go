@@ -1494,3 +1494,142 @@ func TestAgentResource_toolConfigsWithPlannedDefaults(t *testing.T) {
 		})
 	}
 }
+
+// toolsetConfigsAgent is what the server returns for toolsetConfigsPlan: the
+// built-in toolset and crm without per-tool configs, billing with an empty
+// list, docs with one config.
+const toolsetConfigsAgent = `{"id":"agent_1","name":"n","model":{"id":"claude-sonnet-4-6"},"version":2,
+	"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z",
+	"mcp_servers":[
+		{"type":"url","name":"crm","url":"https://crm.example.com/sse"},
+		{"type":"url","name":"billing","url":"https://billing.example.com/sse"},
+		{"type":"url","name":"docs","url":"https://docs.example.com/sse"}],
+	"tools":[
+		{"type":"agent_toolset_20260401","default_config":{"enabled":true,"permission_policy":{"type":"always_allow"}},"configs":[]},
+		{"type":"mcp_toolset","mcp_server_name":"crm","default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}},"configs":[]},
+		{"type":"mcp_toolset","mcp_server_name":"billing","default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}},"configs":[]},
+		{"type":"mcp_toolset","mcp_server_name":"docs","default_config":{"enabled":true,"permission_policy":{"type":"always_ask"}},
+			"configs":[{"name":"search","enabled":true,"permission_policy":{"type":"always_ask"}}]},
+		{"type":"custom","name":"lookup","description":"Look up","input_schema":{"type":"object"}}]}`
+
+// toolsetConfigsPlan plans agent_toolset and crm without `configs`, billing
+// with `configs = []` and docs with one config, plus a custom tool.
+func toolsetConfigsPlan(t *testing.T) AgentResourceModel {
+	t.Helper()
+	m := toolsetDefaultsModel(t, documentedDefaults, 0)
+	servers := make([]attr.Value, 0, 3)
+	for _, name := range []string{"crm", "billing", "docs"} {
+		servers = append(servers, types.ObjectValueMust(agentMCPServerAttrTypes, map[string]attr.Value{
+			"name": types.StringValue(name), "url": types.StringValue("https://" + name + ".example.com/sse"),
+		}))
+	}
+	m.MCPServers = types.ListValueMust(types.ObjectType{AttrTypes: agentMCPServerAttrTypes}, servers)
+	toolset := func(name string, configs types.List) agentMCPToolsetModel {
+		return agentMCPToolsetModel{
+			MCPServerName:           types.StringValue(name),
+			DefaultEnabled:          types.BoolValue(true),
+			DefaultPermissionPolicy: types.StringValue("always_ask"),
+			Configs:                 configs,
+		}
+	}
+	m.MCPToolsets = mcpToolsetsList(t,
+		toolset("crm", types.ListNull(types.ObjectType{AttrTypes: agentMCPToolConfigAttrTypes})),
+		toolset("billing", toolConfigsList(t, agentMCPToolConfigAttrTypes)),
+		toolset("docs", toolConfigsList(t, agentMCPToolConfigAttrTypes,
+			agentToolConfigModel{Name: types.StringValue("search"), Enabled: types.BoolValue(true), PermissionPolicy: types.StringNull()})),
+	)
+	m.CustomTools = types.ListValueMust(types.ObjectType{AttrTypes: agentCustomToolAttrTypes}, []attr.Value{
+		types.ObjectValueMust(agentCustomToolAttrTypes, map[string]attr.Value{
+			"name": types.StringValue("lookup"), "description": types.StringValue("Look up"),
+			"input_schema": jsontypes.NewNormalizedValue(`{"type":"object"}`),
+		}),
+	})
+	return m
+}
+
+// On Update, a toolset planned without per-tool configs (null or empty) sends
+// `configs: []` (#508): `tools` is a full replacement, but an omitted `configs`
+// might keep the overrides the toolset holds, so one set out of band would
+// survive the apply. Planned configs are sent as before, and Create still omits
+// the field, since nothing is stored yet.
+func TestAgentResource_toolsetConfigsOnUpdate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var mu sync.Mutex
+	bodies := map[string][]byte{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies[r.URL.Path] = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, toolsetConfigsAgent)
+	}))
+	t.Cleanup(srv.Close)
+	r := &AgentResource{client: oauthtest.NewSDKClient(t, srv)}
+	sch := schematest.ResourceSchema(t, r)
+
+	planned := toolsetConfigsPlan(t)
+	plan := tfsdk.Plan{Schema: sch}
+	if diags := plan.Set(ctx, &planned); diags.HasError() {
+		t.Fatalf("set plan: %+v", diags)
+	}
+	prior := planned
+	prior.ID = types.StringValue("agent_1")
+	prior.Version = types.Int64Value(1)
+	state := tfsdk.State{Schema: sch}
+	if diags := state.Set(ctx, &prior); diags.HasError() {
+		t.Fatalf("set state: %+v", diags)
+	}
+
+	createResp := &resource.CreateResponse{State: tfsdk.State{Schema: sch}}
+	r.Create(ctx, resource.CreateRequest{Plan: plan}, createResp)
+	if createResp.Diagnostics.HasError() {
+		t.Fatalf("create: %+v", createResp.Diagnostics)
+	}
+	updateResp := &resource.UpdateResponse{State: tfsdk.State{Schema: sch}}
+	r.Update(ctx, resource.UpdateRequest{Plan: plan, State: state}, updateResp)
+	if updateResp.Diagnostics.HasError() {
+		t.Fatalf("update: %+v", updateResp.Diagnostics)
+	}
+
+	// configsOf returns each tool's raw `configs`, "" when the field is absent.
+	configsOf := func(t *testing.T, path string) []string {
+		t.Helper()
+		mu.Lock()
+		raw := bodies[path]
+		mu.Unlock()
+		var body struct {
+			Tools []map[string]json.RawMessage `json:"tools"`
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("%s body %s: %s", path, raw, err)
+		}
+		got := make([]string, 0, len(body.Tools))
+		for _, tool := range body.Tools {
+			got = append(got, string(tool["configs"]))
+		}
+		return got
+	}
+	const docs = `[{"name":"search","enabled":true}]`
+	for _, tt := range []struct {
+		name, path string
+		want       []string // agent_toolset, crm, billing, docs, custom
+	}{
+		{"create omits them", "/v1/agents", []string{"", "", "", docs, ""}},
+		{"update sends an empty list", "/v1/agents/agent_1", []string{"[]", "[]", "[]", docs, ""}},
+	} {
+		if got := configsOf(t, tt.path); strings.Join(got, " | ") != strings.Join(tt.want, " | ") {
+			t.Errorf("%s: configs = %q\nwant      %q", tt.name, got, tt.want)
+		}
+	}
+
+	var data AgentResourceModel
+	if diags := updateResp.State.Get(ctx, &data); diags.HasError() {
+		t.Fatalf("get state: %+v", diags)
+	}
+	if !data.AgentToolset.Equal(planned.AgentToolset) || !data.MCPToolsets.Equal(planned.MCPToolsets) {
+		t.Errorf("state after update = %s, %s\nwant the plan   %s, %s", data.AgentToolset, data.MCPToolsets, planned.AgentToolset, planned.MCPToolsets)
+	}
+}

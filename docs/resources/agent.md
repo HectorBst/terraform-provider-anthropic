@@ -188,7 +188,7 @@ output "coordinator_roster_size" {
 
 Optional:
 
-- `configs` (Attributes List) Per-tool configuration overrides. (see [below for nested schema](#nestedatt--agent_toolset--configs))
+- `configs` (Attributes List) Per-tool configuration overrides. When unset or empty, an update sends an empty list, which removes any override set outside Terraform. (see [below for nested schema](#nestedatt--agent_toolset--configs))
 - `default_enabled` (Boolean) Whether tools are enabled by default. Defaults to `true`, the API's documented default. When unset, the plan holds the default, so a value changed outside Terraform is reverted on the next apply.
 - `default_permission_policy` (String) Default permission policy: `always_allow` or `always_ask`. Defaults to `always_allow`, the API's documented default for the built-in toolset. When unset, the plan holds the default, so a policy changed outside Terraform is reverted on the next apply.
 
@@ -237,7 +237,7 @@ Required:
 
 Optional:
 
-- `configs` (Attributes List) Per-MCP-tool configuration overrides. (see [below for nested schema](#nestedatt--mcp_toolsets--configs))
+- `configs` (Attributes List) Per-MCP-tool configuration overrides. When unset or empty, an update sends an empty list, which removes any override set outside Terraform. (see [below for nested schema](#nestedatt--mcp_toolsets--configs))
 - `default_enabled` (Boolean) Whether MCP tools are enabled by default. Defaults to `true`, the API's documented default. When unset, the plan holds the default, so a value changed outside Terraform is reverted on the next apply.
 - `default_permission_policy` (String) Default permission policy: `always_allow` or `always_ask`. Defaults to `always_ask`, the API's documented default for MCP toolsets, so that a tool added to the server later needs approval. When unset, the plan holds the default, so a policy changed outside Terraform (to `always_allow`, say) is reverted on the next apply.
 
