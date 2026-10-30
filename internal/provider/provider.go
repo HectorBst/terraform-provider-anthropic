@@ -40,6 +40,7 @@ import (
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/skills"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/telemetrydestinations"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/tunnels"
+	"github.com/ippontech/terraform-provider-anthropic/internal/services/spendlimits"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/userprofiles"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/vaults"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/workspaces"
@@ -321,6 +322,7 @@ func (p *AnthropicProvider) Resources(ctx context.Context) []func() resource.Res
 		telemetrydestinations.NewTelemetryDestinationResource,
 		tunnels.NewTunnelResource,
 		tunnels.NewTunnelCertificateResource,
+		spendlimits.NewSpendLimitResource,
 		userprofiles.NewUserProfileResource,
 		vaults.NewVaultResource,
 		vaults.NewVaultCredentialResource,
