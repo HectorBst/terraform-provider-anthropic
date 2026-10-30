@@ -38,7 +38,7 @@ Each directory below has a `CLAUDE.md` with the load-bearing details of its reso
 - `environments/`: `environment`; `environment`, `environments`. Standard key.
 - `externalkeys/`: anthropic_external_key resource + external_key/external_keys data sources (CMEK key records; admin API, raw `admin.Client`).
 - `externalkeys/`: see its `CLAUDE.md`.
-- `federation/`: `federation_issuer`, `federation_rule`, `federation_rule_workspace`; `federation_issuer(s)`, `federation_rule(s)`, `federation_rule_workspaces`. OAuth bearer. Also holds the WIF staleness probe results.
+- `federation/`: anthropic_federation_issuer + anthropic_federation_rule + anthropic_federation_rule_workspace resources + federation_issuer(s)/federation_rule(s)/federation_rule_workspaces data sources (Beta; WIF issuers and rules, org:admin OAuth bearer only).
 - `files/`: `file`; `file`, `files` (Files API GA). Standard key.
 - `memorystores/`: `memory_store`, `memory`; `memory_store(s)`, `memory`, `memories`. Standard key.
 - `messages/`: `message`; `count_tokens`. Standard key.
