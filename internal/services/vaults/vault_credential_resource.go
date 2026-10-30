@@ -30,6 +30,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	providerrors "github.com/ippontech/terraform-provider-anthropic/internal/errors"
 	providerdata "github.com/ippontech/terraform-provider-anthropic/internal/providerdata"
+	"github.com/ippontech/terraform-provider-anthropic/internal/tfvalue"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -1288,8 +1289,9 @@ func mapCredentialResponseToState(ctx context.Context, cred *anthropic.BetaManag
 		metaMap, d := types.MapValue(types.StringType, elements)
 		diags.Append(d...)
 		data.Metadata = metaMap
-	} else if !data.Metadata.IsNull() {
-		data.Metadata = types.MapNull(types.StringType)
+	} else {
+		// The API answers {} both without metadata and after metadata = {}.
+		data.Metadata = tfvalue.MetadataAfterEmptyResponse(data.Metadata)
 	}
 
 	// Map auth response back into non-secret state fields.

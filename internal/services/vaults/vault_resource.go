@@ -418,6 +418,7 @@ func mapVaultCommon(vault *anthropic.BetaManagedAgentsVault) (vaultModel, diag.D
 // leaving archive_on_destroy (local-only) untouched.
 func mapVaultResponseToState(vault *anthropic.BetaManagedAgentsVault, data *VaultResourceModel) diag.Diagnostics {
 	common, diags := mapVaultCommon(vault)
+	current := data.Metadata
 
 	data.ID = common.ID
 	data.DisplayName = common.DisplayName
@@ -425,7 +426,12 @@ func mapVaultResponseToState(vault *anthropic.BetaManagedAgentsVault, data *Vaul
 	data.CreatedAt = common.CreatedAt
 	data.UpdatedAt = common.UpdatedAt
 	data.ArchivedAt = common.ArchivedAt
+	// The API answers {} both without metadata and after metadata = {}: keep
+	// a known empty map, or metadata = {} fails with an inconsistent result.
 	data.Metadata = common.Metadata
+	if data.Metadata.IsNull() {
+		data.Metadata = tfvalue.MetadataAfterEmptyResponse(current)
+	}
 
 	return diags
 }
