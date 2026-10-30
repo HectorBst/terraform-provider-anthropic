@@ -1443,25 +1443,13 @@ func mapToolConfigsToState(current types.List, apiConfigs []apiToolConfig, defau
 		if !ok {
 			continue
 		}
-		enabled := types.BoolValue(apiCfg.enabled)
-		if sc.enabledUnset && (mode == applyMapping || apiCfg.enabled == defaultEnabled) {
-			enabled = types.BoolNull()
-		}
-		permPolicy := types.StringValue(apiCfg.permissionPolicy)
-		if sc.policyUnset && (mode == applyMapping || apiCfg.permissionPolicy == defaultPolicy) {
-			permPolicy = types.StringNull()
-		}
-		if apiCfg.extra != nil {
-			apiCfg.extra = webToolOptionsToState(sc.attrs, apiCfg.extra, mode)
-		}
-		obj, d := types.ObjectValue(attrTypes, apiCfg.values(enabled, permPolicy))
+		obj, d := trackedToolConfigValue(sc, apiCfg, defaultEnabled, defaultPolicy, attrTypes, mode)
 		diags.Append(d...)
 		configObjs = append(configObjs, obj)
 	}
 
 	for _, c := range apiConfigs {
-		isDefault := c.enabled == defaultEnabled && c.permissionPolicy == defaultPolicy
-		if mode == applyMapping || tracked[c.name] || (isDefault && mode == readMapping) {
+		if tracked[c.name] || !appendsUntrackedToolConfig(c, defaultEnabled, defaultPolicy, mode) {
 			continue
 		}
 		tracked[c.name] = true
@@ -1476,6 +1464,39 @@ func mapToolConfigsToState(current types.List, apiConfigs []apiToolConfig, defau
 	list, d := types.ListValue(elemType, configObjs)
 	diags.Append(d...)
 	return list, diags
+}
+
+// trackedToolConfigValue maps the API config of a tool current tracks. A field
+// the configuration left unset stays null while the API value equals the
+// toolset default it inherits, and always with applyMapping; the web options
+// of a built-in tool resolve against current (webToolOptionsToState).
+func trackedToolConfigValue(sc trackedToolConfig, apiCfg apiToolConfig, defaultEnabled bool, defaultPolicy string, attrTypes map[string]attr.Type, mode mappingMode) (types.Object, diag.Diagnostics) {
+	enabled := types.BoolValue(apiCfg.enabled)
+	if sc.enabledUnset && (mode == applyMapping || apiCfg.enabled == defaultEnabled) {
+		enabled = types.BoolNull()
+	}
+	permPolicy := types.StringValue(apiCfg.permissionPolicy)
+	if sc.policyUnset && (mode == applyMapping || apiCfg.permissionPolicy == defaultPolicy) {
+		permPolicy = types.StringNull()
+	}
+	if apiCfg.extra != nil {
+		apiCfg.extra = webToolOptionsToState(sc.attrs, apiCfg.extra, mode)
+	}
+	return types.ObjectValue(attrTypes, apiCfg.values(enabled, permPolicy))
+}
+
+// appendsUntrackedToolConfig reports whether the API config of a tool current
+// does not track goes into state: never with applyMapping, on Read only when
+// it differs from the toolset defaults, and always with importMapping.
+func appendsUntrackedToolConfig(c apiToolConfig, defaultEnabled bool, defaultPolicy string, mode mappingMode) bool {
+	switch mode {
+	case applyMapping:
+		return false
+	case readMapping:
+		return c.enabled != defaultEnabled || c.permissionPolicy != defaultPolicy
+	default:
+		return true
+	}
 }
 
 // mapAgentToolsetToState maps the API agent toolset response to a Terraform object.
