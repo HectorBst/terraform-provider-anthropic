@@ -258,36 +258,14 @@ func (r *PluginResource) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 
 	pinMayComeFromIgnoreChanges := false
 	if req.State.Raw.IsNull() {
-		if config.SourceDir.IsNull() && config.SourceArchive.IsNull() {
-			resp.Diagnostics.AddAttributeError(path.Root("source_dir"), "Missing plugin source",
-				"Creating a plugin uploads its first version: set `source_dir` or `source_archive`.")
-		}
-		// A value unknown here may still turn out null: Create checks it.
-		if knownString(config.ServedVersionID) != "" {
-			resp.Diagnostics.AddAttributeError(path.Root("served_version_id"), servedVersionOnCreateSummary, servedVersionOnCreateDetail)
-		}
+		resp.Diagnostics.Append(validatePluginCreateConfig(config)...)
 	} else {
 		var state PluginResourceModel
 		resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
-		for _, input := range []struct {
-			name          string
-			config, state types.String
-		}{
-			{"source_dir", config.SourceDir, state.SourceDir},
-			{"source_archive", config.SourceArchive, state.SourceArchive},
-			{"release_notes", config.ReleaseNotes, state.ReleaseNotes},
-		} {
-			// A null state value is an imported plugin, or an input set for the
-			// first time: nothing was uploaded from it, so nothing to warn about.
-			if !input.state.IsNull() && !input.config.Equal(input.state) {
-				resp.Diagnostics.AddAttributeWarning(path.Root(input.name), "Change uploads nothing",
-					fmt.Sprintf("`%s` is only read when the plugin is created. This change is recorded in state, but "+
-						"the plugin keeps its content: publish new content with an `anthropic_plugin_version` resource.", input.name))
-			}
-		}
+		resp.Diagnostics.Append(warnUploadInputChanges(config, state)...)
 		// Pinning moves updated_at, even onto the version already served
 		// ("including pinning an unpinned Plugin to the version it already
 		// serves", Update Plugin), and Update maps the whole answer of the
@@ -311,6 +289,45 @@ func (r *PluginResource) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 	case !config.ServedVersionID.IsNull():
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("served_version_pinned"), true)...)
 	}
+}
+
+// validatePluginCreateConfig checks the configuration of a plugin about to be
+// created: its first version is uploaded from source_dir or source_archive,
+// and served_version_id cannot name a version yet. A served_version_id
+// unknown here may still turn out null: Create checks it.
+func validatePluginCreateConfig(config PluginResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if config.SourceDir.IsNull() && config.SourceArchive.IsNull() {
+		diags.AddAttributeError(path.Root("source_dir"), "Missing plugin source",
+			"Creating a plugin uploads its first version: set `source_dir` or `source_archive`.")
+	}
+	if knownString(config.ServedVersionID) != "" {
+		diags.AddAttributeError(path.Root("served_version_id"), servedVersionOnCreateSummary, servedVersionOnCreateDetail)
+	}
+	return diags
+}
+
+// warnUploadInputChanges warns about a change to an input read only when the
+// plugin is created, since it uploads nothing.
+func warnUploadInputChanges(config, state PluginResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	for _, input := range []struct {
+		name          string
+		config, state types.String
+	}{
+		{"source_dir", config.SourceDir, state.SourceDir},
+		{"source_archive", config.SourceArchive, state.SourceArchive},
+		{"release_notes", config.ReleaseNotes, state.ReleaseNotes},
+	} {
+		// A null state value is an imported plugin, or an input set for the
+		// first time: nothing was uploaded from it, so nothing to warn about.
+		if !input.state.IsNull() && !input.config.Equal(input.state) {
+			diags.AddAttributeWarning(path.Root(input.name), "Change uploads nothing",
+				fmt.Sprintf("`%s` is only read when the plugin is created. This change is recorded in state, but "+
+					"the plugin keeps its content: publish new content with an `anthropic_plugin_version` resource.", input.name))
+		}
+	}
+	return diags
 }
 
 // planServeResultUnknown leaves unknown in the plan every computed attribute
