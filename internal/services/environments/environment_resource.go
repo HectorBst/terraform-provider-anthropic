@@ -514,101 +514,101 @@ func buildEnvironmentConfigParams(ctx context.Context, configObj types.Object) (
 
 	configParams := anthropic.BetaCloudConfigParams{}
 
-	if !configModel.Networking.IsNull() && !configModel.Networking.IsUnknown() {
-		var networkingModel environmentNetworkingModel
-		diags.Append(configModel.Networking.As(ctx, &networkingModel, basetypes.ObjectAsOptions{})...)
+	if isKnown(configModel.Networking) {
+		networking, d := buildNetworkingParams(ctx, configModel.Networking)
+		diags.Append(d...)
 		if diags.HasError() {
 			return anthropic.BetaCloudConfigParams{}, diags
 		}
-
-		if networkingModel.Type.ValueString() == "unrestricted" {
-			configParams.Networking = anthropic.BetaCloudConfigParamsNetworkingUnion{
-				OfUnrestricted: &anthropic.BetaUnrestrictedNetworkParam{Type: "unrestricted"},
-			}
-		} else {
-			limited := &anthropic.BetaLimitedNetworkParams{}
-			if !networkingModel.AllowMCPServers.IsNull() && !networkingModel.AllowMCPServers.IsUnknown() {
-				limited.AllowMCPServers = param.NewOpt(networkingModel.AllowMCPServers.ValueBool())
-			}
-			if !networkingModel.AllowPackageManagers.IsNull() && !networkingModel.AllowPackageManagers.IsUnknown() {
-				limited.AllowPackageManagers = param.NewOpt(networkingModel.AllowPackageManagers.ValueBool())
-			}
-			// An empty list is sent as []: the update endpoint keeps an
-			// omitted allowed_hosts, so leaving it out cannot clear the hosts.
-			if !networkingModel.AllowedHosts.IsNull() && !networkingModel.AllowedHosts.IsUnknown() {
-				var hosts []string
-				diags.Append(networkingModel.AllowedHosts.ElementsAs(ctx, &hosts, false)...)
-				if diags.HasError() {
-					return anthropic.BetaCloudConfigParams{}, diags
-				}
-				limited.AllowedHosts = hosts
-			}
-			configParams.Networking = anthropic.BetaCloudConfigParamsNetworkingUnion{OfLimited: limited}
-		}
+		configParams.Networking = networking
 	}
 
-	if !configModel.Packages.IsNull() && !configModel.Packages.IsUnknown() {
-		var packagesModel environmentPackagesModel
-		diags.Append(configModel.Packages.As(ctx, &packagesModel, basetypes.ObjectAsOptions{})...)
+	if isKnown(configModel.Packages) {
+		packages, d := buildPackagesParams(ctx, configModel.Packages)
+		diags.Append(d...)
 		if diags.HasError() {
 			return anthropic.BetaCloudConfigParams{}, diags
 		}
-
-		packagesParams := anthropic.BetaPackagesParams{}
-
-		if !packagesModel.Apt.IsNull() && !packagesModel.Apt.IsUnknown() {
-			var apt []string
-			diags.Append(packagesModel.Apt.ElementsAs(ctx, &apt, false)...)
-			if diags.HasError() {
-				return anthropic.BetaCloudConfigParams{}, diags
-			}
-			packagesParams.Apt = apt
-		}
-		if !packagesModel.Cargo.IsNull() && !packagesModel.Cargo.IsUnknown() {
-			var cargo []string
-			diags.Append(packagesModel.Cargo.ElementsAs(ctx, &cargo, false)...)
-			if diags.HasError() {
-				return anthropic.BetaCloudConfigParams{}, diags
-			}
-			packagesParams.Cargo = cargo
-		}
-		if !packagesModel.Gem.IsNull() && !packagesModel.Gem.IsUnknown() {
-			var gem []string
-			diags.Append(packagesModel.Gem.ElementsAs(ctx, &gem, false)...)
-			if diags.HasError() {
-				return anthropic.BetaCloudConfigParams{}, diags
-			}
-			packagesParams.Gem = gem
-		}
-		if !packagesModel.Go.IsNull() && !packagesModel.Go.IsUnknown() {
-			var goPkgs []string
-			diags.Append(packagesModel.Go.ElementsAs(ctx, &goPkgs, false)...)
-			if diags.HasError() {
-				return anthropic.BetaCloudConfigParams{}, diags
-			}
-			packagesParams.Go = goPkgs
-		}
-		if !packagesModel.Npm.IsNull() && !packagesModel.Npm.IsUnknown() {
-			var npm []string
-			diags.Append(packagesModel.Npm.ElementsAs(ctx, &npm, false)...)
-			if diags.HasError() {
-				return anthropic.BetaCloudConfigParams{}, diags
-			}
-			packagesParams.Npm = npm
-		}
-		if !packagesModel.Pip.IsNull() && !packagesModel.Pip.IsUnknown() {
-			var pip []string
-			diags.Append(packagesModel.Pip.ElementsAs(ctx, &pip, false)...)
-			if diags.HasError() {
-				return anthropic.BetaCloudConfigParams{}, diags
-			}
-			packagesParams.Pip = pip
-		}
-
-		configParams.Packages = packagesParams
+		configParams.Packages = packages
 	}
 
 	return configParams, diags
+}
+
+// isKnown reports whether v is neither null nor unknown: only known values
+// are sent, so the API keeps (update) or defaults (create) the others.
+func isKnown(v attr.Value) bool {
+	return !v.IsNull() && !v.IsUnknown()
+}
+
+// buildNetworkingParams converts a known networking object to SDK params:
+// "unrestricted" sends its type alone, any other type a limited network with
+// its known fields (an empty allowed_hosts is left out).
+func buildNetworkingParams(ctx context.Context, obj types.Object) (anthropic.BetaCloudConfigParamsNetworkingUnion, diag.Diagnostics) {
+	var model environmentNetworkingModel
+	diags := obj.As(ctx, &model, basetypes.ObjectAsOptions{})
+	if diags.HasError() {
+		return anthropic.BetaCloudConfigParamsNetworkingUnion{}, diags
+	}
+
+	if model.Type.ValueString() == "unrestricted" {
+		return anthropic.BetaCloudConfigParamsNetworkingUnion{
+			OfUnrestricted: &anthropic.BetaUnrestrictedNetworkParam{Type: "unrestricted"},
+		}, diags
+	}
+
+	limited := &anthropic.BetaLimitedNetworkParams{}
+	if isKnown(model.AllowMCPServers) {
+		limited.AllowMCPServers = param.NewOpt(model.AllowMCPServers.ValueBool())
+	}
+	if isKnown(model.AllowPackageManagers) {
+		limited.AllowPackageManagers = param.NewOpt(model.AllowPackageManagers.ValueBool())
+	}
+	// An empty list is sent as []: the update endpoint keeps an omitted
+	// allowed_hosts, so leaving it out cannot clear the hosts.
+	diags.Append(knownStrings(ctx, model.AllowedHosts, &limited.AllowedHosts)...)
+	if diags.HasError() {
+		return anthropic.BetaCloudConfigParamsNetworkingUnion{}, diags
+	}
+	return anthropic.BetaCloudConfigParamsNetworkingUnion{OfLimited: limited}, diags
+}
+
+// buildPackagesParams converts a known packages object to SDK params: each
+// known list is sent, an empty one as [].
+func buildPackagesParams(ctx context.Context, obj types.Object) (anthropic.BetaPackagesParams, diag.Diagnostics) {
+	var model environmentPackagesModel
+	diags := obj.As(ctx, &model, basetypes.ObjectAsOptions{})
+	if diags.HasError() {
+		return anthropic.BetaPackagesParams{}, diags
+	}
+
+	var params anthropic.BetaPackagesParams
+	for _, pkg := range []struct {
+		list   types.List
+		target *[]string
+	}{
+		{model.Apt, &params.Apt},
+		{model.Cargo, &params.Cargo},
+		{model.Gem, &params.Gem},
+		{model.Go, &params.Go},
+		{model.Npm, &params.Npm},
+		{model.Pip, &params.Pip},
+	} {
+		diags.Append(knownStrings(ctx, pkg.list, pkg.target)...)
+		if diags.HasError() {
+			return anthropic.BetaPackagesParams{}, diags
+		}
+	}
+	return params, diags
+}
+
+// knownStrings reads list into target when it is known and leaves target
+// alone otherwise.
+func knownStrings(ctx context.Context, list types.List, target *[]string) diag.Diagnostics {
+	if !isKnown(list) {
+		return nil
+	}
+	return list.ElementsAs(ctx, target, false)
 }
 
 // mapEnvironmentResponseToState maps the API response to the Terraform state model.
