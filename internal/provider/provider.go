@@ -311,6 +311,7 @@ func (p *AnthropicProvider) Resources(ctx context.Context) []func() resource.Res
 		vaults.NewVaultCredentialResource,
 		workspaces.NewWorkspaceResource,
 		workspaces.NewWorkspaceMemberResource,
+		workspaces.NewWorkspaceRateLimitResource,
 	}
 }
 
