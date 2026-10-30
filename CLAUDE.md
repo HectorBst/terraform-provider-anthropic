@@ -8,7 +8,7 @@ A Terraform provider on the [Terraform Plugin Framework](https://developer.hashi
 
 - `internal/provider/`: `provider.go` (schema, credentials, client construction, registration in `Resources()` / `DataSources()`) and `federation.go` (the `federation` block).
 - `internal/services/<service>/`: resources and data sources, one directory per Anthropic service.
-- `internal/admin/`: client for the Admin API (`/v1/organizations/*`), which the SDK does not cover. `DoRequest(ctx, method, path, body, opts...)` takes per-request options: `admin.WithBeta("…")` for the `anthropic-beta` header that beta organization endpoints require (they answer 404 without it: plugins, webhooks, telemetry destinations; listing spend limits needs `spend-limit-reads-2026-09-26`, while getting, setting or deleting one spend limit takes no beta header) and `admin.WithHeader`; a body of type `admin.RawBody{ContentType, Data}` is sent as is (multipart uploads) instead of being marshalled to JSON.
+- `internal/admin/`: client for the Admin API (`/v1/organizations/*`), which the SDK does not cover. `DoRequest(ctx, method, path, body, opts...)` takes per-request options: `admin.WithBeta("…")` for the `anthropic-beta` header that beta organization endpoints require (they answer 404 without it: plugins, webhooks, telemetry destinations; listing spend limits needs `spend-limit-reads-2026-09-26`, while getting, setting or deleting one spend limit takes no beta header) and `admin.WithHeader`; a body of type `admin.RawBody{ContentType, Data}` is sent as is (multipart uploads) instead of being marshalled to JSON. An `*admin.APIError` carries the raw `error.details` object in `Details` when the API sends one (the Plugins API's `error_code`, `plugin_id`, ...).
 - `internal/providerdata/`: `ProviderData`, passed to every `Configure`, and the `OAuthClient` wrapper.
 - `internal/errors/` (import alias `providerrors`): nil-client guards for `Configure`, and `IsNotFound(err)` for SDK errors (see [404 handling](#404-handling)).
 - `internal/tfvalue/`: `StringOrNull` / `TimeOrNull` map the SDK zero values of absent API fields (`""`, the zero time) to null. Use them in every state mapping instead of a per-package helper.
@@ -46,6 +46,8 @@ Each directory below has a `CLAUDE.md` with the load-bearing details of its reso
 - `organizations/`: `invite`, `organization_member` (import-only); `organization`, `organization_member(s)`, `invite(s)`. Admin key.
 - `organizationwebhooks/`: anthropic_organization_webhook resource (admin API, raw `admin.Client`, beta header `webhooks-2026-10-07` on every call via `doOrganizationWebhookRequest`).
 - `organizationwebhooks/`: see its `CLAUDE.md`.
+- `plugins/`: Claude Enterprise Plugins API (beta `ce-plugins-2026-09-01`, raw `admin.Client`, Enterprise scoped admin key): anthropic_plugin + anthropic_plugin_version resources; multipart bodies built in plugin_source.go, requests in plugin_requests.go; no acceptance tests (Console test org), httptest + plan only.
+- `plugins/`: see its `CLAUDE.md`.
 - `rbac/`: anthropic_rbac_group + anthropic_rbac_group_member resources + rbac_group/rbac_groups data sources (Claude Enterprise only; raw `admin.Client` since RBAC is in the SDK only from v1.77.0; own package rather than organizations/ because groups are enterprise-wide with their own `rbac_groups` scopes, like federation/ and serviceaccounts/ sit beside organizations/).
 - `rbac/`: see its `CLAUDE.md`.
 - `serviceaccounts/`: `service_account`, `service_account_workspace`; `service_account(s)`, `service_account_workspaces`. OAuth bearer.
