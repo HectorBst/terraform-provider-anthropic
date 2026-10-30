@@ -531,34 +531,96 @@ func cacheControlParam(m *CacheControlModel) anthropic.CacheControlEphemeralPara
 
 func isKnownString(v types.String) bool { return !v.IsNull() && !v.IsUnknown() }
 
-// buildMessageParams turns the planned model into Messages API parameters.
-func buildMessageParams(ctx context.Context, data *MessageResourceModel) (anthropic.MessageNewParams, diag.Diagnostics) {
-	var diags diag.Diagnostics
+// isKnown reports whether v is neither null nor unknown.
+func isKnown(v attr.Value) bool { return !v.IsNull() && !v.IsUnknown() }
 
-	var msgModels []MessageResourceParamModel
-	diags.Append(data.Messages.ElementsAs(ctx, &msgModels, false)...)
-	if diags.HasError() {
-		return anthropic.MessageNewParams{}, diags
+// textBlock returns the message's role and its text block.
+func (m MessageParamModel) textBlock() (string, anthropic.ContentBlockParamUnion) {
+	return m.Role.ValueString(), anthropic.NewTextBlock(m.Content.ValueString())
+}
+
+// textBlock returns the message's role and its text block, with the
+// message's cache_control breakpoint when it has one.
+func (m MessageResourceParamModel) textBlock() (string, anthropic.ContentBlockParamUnion) {
+	block := anthropic.NewTextBlock(m.Content.ValueString())
+	if m.CacheControl != nil {
+		block.OfText.CacheControl = cacheControlParam(m.CacheControl)
 	}
+	return m.Role.ValueString(), block
+}
 
-	sdkMessages := make([]anthropic.MessageParam, len(msgModels))
-	for i, m := range msgModels {
-		block := anthropic.NewTextBlock(m.Content.ValueString())
-		if m.CacheControl != nil {
-			block.OfText.CacheControl = cacheControlParam(m.CacheControl)
-		}
-		switch m.Role.ValueString() {
+// messageEntry is an entry of a `messages` list: MessageParamModel for
+// anthropic_count_tokens, MessageResourceParamModel for anthropic_message.
+type messageEntry interface {
+	textBlock() (string, anthropic.ContentBlockParamUnion)
+}
+
+// decodeMessages reads a `messages` list into entries of type T and builds
+// one single-block message per entry. The first entry with a role other
+// than user or assistant is an error, and no message is returned.
+func decodeMessages[T messageEntry](ctx context.Context, list types.List) ([]anthropic.MessageParam, diag.Diagnostics) {
+	var entries []T
+	diags := list.ElementsAs(ctx, &entries, false)
+	if diags.HasError() {
+		return nil, diags
+	}
+	messages := make([]anthropic.MessageParam, len(entries))
+	for i, entry := range entries {
+		role, block := entry.textBlock()
+		switch role {
 		case "user":
-			sdkMessages[i] = anthropic.NewUserMessage(block)
+			messages[i] = anthropic.NewUserMessage(block)
 		case "assistant":
-			sdkMessages[i] = anthropic.NewAssistantMessage(block)
+			messages[i] = anthropic.NewAssistantMessage(block)
 		default:
 			diags.AddError(
 				"Invalid Message Role",
-				fmt.Sprintf("Message at index %d has invalid role %q; must be \"user\" or \"assistant\".", i, m.Role.ValueString()),
+				fmt.Sprintf("Message at index %d has invalid role %q; must be \"user\" or \"assistant\".", i, role),
 			)
-			return anthropic.MessageNewParams{}, diags
+			return nil, diags
 		}
+	}
+	return messages, diags
+}
+
+// thinkingParam maps a thinking block to the SDK union: budget_tokens goes
+// with "enabled" only, display with "enabled" and "adaptive" (left out when
+// null). ok is false for an unsupported type, with a zero union.
+func thinkingParam(typ string, budget types.Int64, display types.String) (anthropic.ThinkingConfigParamUnion, bool) {
+	switch typ {
+	case "enabled":
+		return anthropic.ThinkingConfigParamUnion{OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+			BudgetTokens: budget.ValueInt64(),
+			Display:      anthropic.ThinkingConfigEnabledDisplay(display.ValueString()),
+		}}, true
+	case "adaptive":
+		return anthropic.ThinkingConfigParamUnion{OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+			Display: anthropic.ThinkingConfigAdaptiveDisplay(display.ValueString()),
+		}}, true
+	case "disabled":
+		return anthropic.ThinkingConfigParamUnion{OfDisabled: &anthropic.ThinkingConfigDisabledParam{}}, true
+	case "between_tools":
+		betweenTools := anthropic.NewThinkingConfigBetweenToolsParam()
+		return anthropic.ThinkingConfigParamUnion{OfBetweenTools: &betweenTools}, true
+	default:
+		return anthropic.ThinkingConfigParamUnion{}, false
+	}
+}
+
+// formatSchema decodes output_config.format, a JSON schema as a JSON string.
+func formatSchema(format jsontypes.Normalized) (map[string]any, error) {
+	var schemaObj map[string]any
+	err := json.Unmarshal([]byte(format.ValueString()), &schemaObj)
+	return schemaObj, err
+}
+
+// buildMessageParams turns the planned model into Messages API parameters.
+// A message that cannot be built stops it at once; the other errors
+// accumulate.
+func buildMessageParams(ctx context.Context, data *MessageResourceModel) (anthropic.MessageNewParams, diag.Diagnostics) {
+	sdkMessages, diags := decodeMessages[MessageResourceParamModel](ctx, data.Messages)
+	if diags.HasError() {
+		return anthropic.MessageNewParams{}, diags
 	}
 
 	params := anthropic.MessageNewParams{
@@ -573,69 +635,31 @@ func buildMessageParams(ctx context.Context, data *MessageResourceModel) (anthro
 
 	// Deprecated (see temperatureDeprecationMessage): sent only when set, so an
 	// unset temperature never reaches the API, not even as 0.
-	if !data.Temperature.IsNull() && !data.Temperature.IsUnknown() {
+	if isKnown(data.Temperature) {
 		params.Temperature = anthropic.Float(data.Temperature.ValueFloat64())
 	}
 
-	if !data.StopSequences.IsNull() && !data.StopSequences.IsUnknown() {
+	if isKnown(data.StopSequences) {
 		var seqs []string
 		diags.Append(data.StopSequences.ElementsAs(ctx, &seqs, false)...)
 		params.StopSequences = seqs
 	}
 
-	if data.Metadata != nil && isKnownString(data.Metadata.UserID) {
-		params.Metadata = anthropic.MetadataParam{UserID: anthropic.String(data.Metadata.UserID.ValueString())}
-	}
-
-	if isKnownString(data.ServiceTier) {
-		params.ServiceTier = anthropic.MessageNewParamsServiceTier(data.ServiceTier.ValueString())
-	}
-
-	if isKnownString(data.InferenceGeo) {
-		params.InferenceGeo = anthropic.String(data.InferenceGeo.ValueString())
-	}
-
-	if isKnownString(data.Speed) {
-		params.Speed = anthropic.MessageNewParamsSpeed(data.Speed.ValueString())
-	}
+	setMessageServiceOptions(&params, data)
 
 	if data.Thinking != nil {
-		display := data.Thinking.Display.ValueString()
-		switch data.Thinking.Type.ValueString() {
-		case "enabled":
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfEnabled: &anthropic.ThinkingConfigEnabledParam{
-				BudgetTokens: data.Thinking.BudgetTokens.ValueInt64(),
-				Display:      anthropic.ThinkingConfigEnabledDisplay(display),
-			}}
-		case "adaptive":
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
-				Display: anthropic.ThinkingConfigAdaptiveDisplay(display),
-			}}
-		case "disabled":
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfDisabled: &anthropic.ThinkingConfigDisabledParam{}}
-		case "between_tools":
-			betweenTools := anthropic.NewThinkingConfigBetweenToolsParam()
-			params.Thinking = anthropic.ThinkingConfigParamUnion{OfBetweenTools: &betweenTools}
-		default:
+		thinking, ok := thinkingParam(data.Thinking.Type.ValueString(), data.Thinking.BudgetTokens, data.Thinking.Display)
+		if !ok {
 			diags.AddAttributeError(path.Root("thinking").AtName("type"), "Invalid Thinking Type",
 				fmt.Sprintf("Unsupported thinking type %q.", data.Thinking.Type.ValueString()))
 		}
+		params.Thinking = thinking
 	}
 
 	if data.OutputConfig != nil {
-		oc := anthropic.OutputConfigParam{}
-		if isKnownString(data.OutputConfig.Effort) {
-			oc.Effort = anthropic.OutputConfigEffort(data.OutputConfig.Effort.ValueString())
-		}
-		if !data.OutputConfig.Format.IsNull() && !data.OutputConfig.Format.IsUnknown() {
-			schemaObj, err := decodeFormatSchema(data.OutputConfig.Format)
-			if err != nil {
-				addInvalidFormatError(&diags, err)
-			} else {
-				oc.Format = anthropic.JSONOutputFormatParam{Schema: schemaObj}
-			}
-		}
-		params.OutputConfig = oc
+		outputConfig, d := messageOutputConfigParam(data.OutputConfig)
+		diags.Append(d...)
+		params.OutputConfig = outputConfig
 	}
 
 	if data.CacheControl != nil {
@@ -647,6 +671,43 @@ func buildMessageParams(ctx context.Context, data *MessageResourceModel) (anthro
 	}
 
 	return params, diags
+}
+
+// setMessageServiceOptions sets the known metadata.user_id, service_tier,
+// inference_geo and speed.
+func setMessageServiceOptions(params *anthropic.MessageNewParams, data *MessageResourceModel) {
+	if data.Metadata != nil && isKnownString(data.Metadata.UserID) {
+		params.Metadata = anthropic.MetadataParam{UserID: anthropic.String(data.Metadata.UserID.ValueString())}
+	}
+	if isKnownString(data.ServiceTier) {
+		params.ServiceTier = anthropic.MessageNewParamsServiceTier(data.ServiceTier.ValueString())
+	}
+	if isKnownString(data.InferenceGeo) {
+		params.InferenceGeo = anthropic.String(data.InferenceGeo.ValueString())
+	}
+	if isKnownString(data.Speed) {
+		params.Speed = anthropic.MessageNewParamsSpeed(data.Speed.ValueString())
+	}
+}
+
+// messageOutputConfigParam maps output_config: the known effort, and the
+// format wrapped as a json_schema output format. A format that does not
+// decode is an error and is left out.
+func messageOutputConfigParam(m *OutputConfigModel) (anthropic.OutputConfigParam, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	oc := anthropic.OutputConfigParam{}
+	if isKnownString(m.Effort) {
+		oc.Effort = anthropic.OutputConfigEffort(m.Effort.ValueString())
+	}
+	if isKnown(m.Format) {
+		schemaObj, err := decodeFormatSchema(m.Format)
+		if err != nil {
+			addInvalidFormatError(&diags, err)
+		} else {
+			oc.Format = anthropic.JSONOutputFormatParam{Schema: schemaObj}
+		}
+	}
+	return oc, diags
 }
 
 // diagnosticsParam maps the diagnostics block to the request object. Without
@@ -665,8 +726,8 @@ func diagnosticsParam(m *DiagnosticsModel) anthropic.DiagnosticsParam {
 // the request together with the whole output_config, so it is an error too,
 // as in anthropic_count_tokens.
 func decodeFormatSchema(format jsontypes.Normalized) (map[string]any, error) {
-	var schemaObj map[string]any
-	if err := json.Unmarshal([]byte(format.ValueString()), &schemaObj); err != nil {
+	schemaObj, err := formatSchema(format)
+	if err != nil {
 		return nil, err
 	}
 	if schemaObj == nil {
@@ -748,31 +809,45 @@ func (v messageConfigValidator) MarkdownDescription(ctx context.Context) string 
 func (messageConfigValidator) ValidateResource(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var thinking types.Object
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("thinking"), &thinking)...)
-	if !resp.Diagnostics.HasError() && !thinking.IsNull() && !thinking.IsUnknown() {
-		attrs := thinking.Attributes()
-		typ, _ := attrs["type"].(types.String)
-		budget, _ := attrs["budget_tokens"].(types.Int64)
-		display, _ := attrs["display"].(types.String)
-		base := path.Root("thinking")
-		if isKnownString(typ) {
-			budgetSet := !budget.IsNull() && !budget.IsUnknown()
-			budgetMissing := budget.IsNull() && !budget.IsUnknown()
-			switch typ.ValueString() {
-			case "enabled":
-				if budgetMissing {
-					resp.Diagnostics.AddAttributeError(base.AtName("budget_tokens"), "Missing budget_tokens",
-						`thinking.budget_tokens is required when thinking.type is "enabled".`)
-				}
-			default:
-				if budgetSet {
-					resp.Diagnostics.AddAttributeError(base.AtName("budget_tokens"), "Unexpected budget_tokens",
-						fmt.Sprintf("thinking.budget_tokens is only allowed when thinking.type is \"enabled\", got %q.", typ.ValueString()))
-				}
-			}
-			if (typ.ValueString() == "disabled" || typ.ValueString() == "between_tools") && isKnownString(display) {
-				resp.Diagnostics.AddAttributeError(base.AtName("display"), "Unexpected display",
-					fmt.Sprintf("thinking.display is not allowed when thinking.type is %q.", typ.ValueString()))
-			}
-		}
+	if resp.Diagnostics.HasError() || !isKnown(thinking) {
+		return
 	}
+	attrs := thinking.Attributes()
+	typ, _ := attrs["type"].(types.String)
+	if !isKnownString(typ) {
+		return
+	}
+	budget, _ := attrs["budget_tokens"].(types.Int64)
+	display, _ := attrs["display"].(types.String)
+	resp.Diagnostics.Append(validateThinkingBudget(typ.ValueString(), budget)...)
+	resp.Diagnostics.Append(validateThinkingDisplay(typ.ValueString(), display)...)
+}
+
+// validateThinkingBudget requires budget_tokens when the thinking type is
+// "enabled" and rejects it otherwise.
+func validateThinkingBudget(typ string, budget types.Int64) diag.Diagnostics {
+	var diags diag.Diagnostics
+	budgetPath := path.Root("thinking").AtName("budget_tokens")
+	budgetSet := !budget.IsNull() && !budget.IsUnknown()
+	budgetMissing := budget.IsNull() && !budget.IsUnknown()
+	if typ == "enabled" && budgetMissing {
+		diags.AddAttributeError(budgetPath, "Missing budget_tokens",
+			`thinking.budget_tokens is required when thinking.type is "enabled".`)
+	}
+	if typ != "enabled" && budgetSet {
+		diags.AddAttributeError(budgetPath, "Unexpected budget_tokens",
+			fmt.Sprintf("thinking.budget_tokens is only allowed when thinking.type is \"enabled\", got %q.", typ))
+	}
+	return diags
+}
+
+// validateThinkingDisplay rejects display when thinking is off ("disabled"
+// or "between_tools").
+func validateThinkingDisplay(typ string, display types.String) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if (typ == "disabled" || typ == "between_tools") && isKnownString(display) {
+		diags.AddAttributeError(path.Root("thinking").AtName("display"), "Unexpected display",
+			fmt.Sprintf("thinking.display is not allowed when thinking.type is %q.", typ))
+	}
+	return diags
 }
