@@ -66,6 +66,7 @@ type AgentResourceModel struct {
 	MCPToolsets       types.List   `tfsdk:"mcp_toolsets"`
 	CustomTools       types.List   `tfsdk:"custom_tools"`
 	Multiagent        types.Object `tfsdk:"multiagent"`
+	ExecutionIdentity types.Object `tfsdk:"execution_identity"`
 	ID                types.String `tfsdk:"id"`
 	Version           types.Int64  `tfsdk:"version"`
 	CreatedAt         types.String `tfsdk:"created_at"`
@@ -542,6 +543,8 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 
+			"execution_identity": executionIdentitySchema(),
+
 			// --- Computed ---
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -571,7 +574,7 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 }
 
 func (r *AgentResource) ConfigValidators(_ context.Context) []resource.ConfigValidator {
-	return []resource.ConfigValidator{&multiagentConfigValidator{}, &agentToolConfigsValidator{}}
+	return []resource.ConfigValidator{&multiagentConfigValidator{}, &agentToolConfigsValidator{}, &executionIdentityConfigValidator{}}
 }
 
 // --- Configure ---
@@ -665,6 +668,16 @@ func (r *AgentResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 	params.Multiagent = multiagent
+
+	// Execution identity: omitted when unset, which stores the default.
+	identity, sendIdentity, diags := buildExecutionIdentityParams(ctx, data.ExecutionIdentity, types.ObjectNull(agentExecutionIdentityAttrTypes))
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if sendIdentity {
+		params.ExecutionIdentity = identity
+	}
 
 	agent, err := r.client.Beta.Agents.New(ctx, params)
 	if err != nil {
@@ -825,6 +838,16 @@ func (r *AgentResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// SetExtraFields replaces the extra fields, so it is called once.
 	if len(extraFields) > 0 {
 		params.SetExtraFields(extraFields)
+	}
+
+	// Execution identity: removing it sends the service account (the default).
+	identity, sendIdentity, diags := buildExecutionIdentityParams(ctx, data.ExecutionIdentity, state.ExecutionIdentity)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if sendIdentity {
+		params.ExecutionIdentity = identity
 	}
 
 	agent, err := r.client.Beta.Agents.Update(ctx, state.ID.ValueString(), params)
@@ -1273,6 +1296,11 @@ func mapAgentResponseToState(ctx context.Context, agent *anthropic.BetaManagedAg
 	multiagent, d := mapMultiagentToState(ctx, agent.Multiagent, agent.ID, data.Multiagent)
 	diags.Append(d...)
 	data.Multiagent = multiagent
+
+	// Execution identity: the echoed default stays null (see mapExecutionIdentityToState).
+	identity, d := mapExecutionIdentityToState(agent.ExecutionIdentity, data.ExecutionIdentity)
+	diags.Append(d...)
+	data.ExecutionIdentity = identity
 
 	return diags
 }
