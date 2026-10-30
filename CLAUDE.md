@@ -50,6 +50,8 @@ Each directory below has a `CLAUDE.md` with the load-bearing details of its reso
 - `rbac/`: see its `CLAUDE.md`.
 - `serviceaccounts/`: `service_account`, `service_account_workspace`; `service_account(s)`, `service_account_workspaces`. OAuth bearer.
 - `skills/`: `skill`, `skill_version`; `skill(s)`, `skill_version(s)`. Standard key.
+- `spendlimits/`: anthropic_spend_limit resource (raw `admin.Client`, SDK has them only from v1.77.0; Claude Enterprise `user` limits, Console `organization`/`workspace` limits in early access).
+- `spendlimits/`: see its `CLAUDE.md`.
 - `telemetrydestinations/`: anthropic_telemetry_destination resource (OpenTelemetry export; admin API, raw `admin.Client`, beta header `telemetry-destinations-2026-08-11` on every call via `doTelemetryRequest`).
 - `telemetrydestinations/`: see its `CLAUDE.md`.
 - `tunnels/`: anthropic_tunnel + anthropic_tunnel_certificate resources + tunnel/tunnels data sources (MCP tunnels, research preview; `client.Beta.Tunnels`/`client.Beta.Tunnels.Certificates`, workspace-scoped `/v1/tunnels`, never the deprecated `/v1/organizations/tunnels`; beta header `mcp-tunnels-2026-06-22` sent by the SDK; `pd.OAuthClient` carrying a `workspace:manage_tunnels` token, API keys rejected).
