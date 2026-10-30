@@ -46,6 +46,8 @@ Each directory below has a `CLAUDE.md` with the load-bearing details of its reso
 - `organizations/`: `invite`, `organization_member` (import-only); `organization`, `organization_member(s)`, `invite(s)`. Admin key.
 - `organizationwebhooks/`: anthropic_organization_webhook resource (admin API, raw `admin.Client`, beta header `webhooks-2026-10-07` on every call via `doOrganizationWebhookRequest`).
 - `organizationwebhooks/`: see its `CLAUDE.md`.
+- `rbac/`: anthropic_rbac_group + anthropic_rbac_group_member resources + rbac_group/rbac_groups data sources (Claude Enterprise only; raw `admin.Client` since RBAC is in the SDK only from v1.77.0; own package rather than organizations/ because groups are enterprise-wide with their own `rbac_groups` scopes, like federation/ and serviceaccounts/ sit beside organizations/).
+- `rbac/`: see its `CLAUDE.md`.
 - `serviceaccounts/`: `service_account`, `service_account_workspace`; `service_account(s)`, `service_account_workspaces`. OAuth bearer.
 - `skills/`: `skill`, `skill_version`; `skill(s)`, `skill_version(s)`. Standard key.
 - `telemetrydestinations/`: anthropic_telemetry_destination resource (OpenTelemetry export; admin API, raw `admin.Client`, beta header `telemetry-destinations-2026-08-11` on every call via `doTelemetryRequest`).
