@@ -98,7 +98,9 @@ func TestPemFingerprint(t *testing.T) {
 func TestCACertificatePEMValidator(t *testing.T) {
 	ca, _ := newTestCA(t, "valid")
 	other, _ := newTestCA(t, "other")
-	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg\n-----END PRIVATE KEY-----\n" // gitleaks:allow: a truncated key, never valid
+	// A deliberately truncated key, never a usable one: the validator must
+	// refuse private-key material whatever its content.
+	keyPEM := "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg\n-----END PRIVATE KEY-----\n" // gitleaks:allow
 
 	tests := []struct {
 		name    string
