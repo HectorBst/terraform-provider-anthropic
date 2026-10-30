@@ -50,6 +50,8 @@ Each directory below has a `CLAUDE.md` with the load-bearing details of its reso
 - `skills/`: `skill`, `skill_version`; `skill(s)`, `skill_version(s)`. Standard key.
 - `telemetrydestinations/`: anthropic_telemetry_destination resource (OpenTelemetry export; admin API, raw `admin.Client`, beta header `telemetry-destinations-2026-08-11` on every call via `doTelemetryRequest`).
 - `telemetrydestinations/`: see its `CLAUDE.md`.
+- `tunnels/`: anthropic_tunnel + anthropic_tunnel_certificate resources + tunnel/tunnels data sources (MCP tunnels, research preview; `client.Beta.Tunnels`/`client.Beta.Tunnels.Certificates`, workspace-scoped `/v1/tunnels`, never the deprecated `/v1/organizations/tunnels`; beta header `mcp-tunnels-2026-06-22` sent by the SDK; `pd.OAuthClient` carrying a `workspace:manage_tunnels` token, API keys rejected).
+- `tunnels/`: see its `CLAUDE.md`.
 - `userprofiles/`: `user_profile`; `user_profile(s)`. Standard key (beta not enabled for the test organization).
 - `vaults/`: `vault`, `vault_credential`; none. Standard key. Also holds the vaults read-after-write measurements.
 - `workspaces/`: `workspace`, `workspace_member`; `workspace(s)`, `workspace_member(s)`, `workspace_rate_limits`. Admin key.
@@ -161,7 +163,7 @@ Three optional credentials, plus a fourth way to obtain the third; at least one 
 |---|---|---|---|---|
 | Standard | `api_key` | `ANTHROPIC_API_KEY` | `pd.Client` | All standard resources and data sources |
 | Admin | `admin_api_key` | `ANTHROPIC_ADMIN_API_KEY` | `pd.AdminClient` | Organization endpoints (`/v1/organizations/*`), through `internal/admin` |
-| OAuth bearer (`org:admin`) | `auth_token` | `ANTHROPIC_AUTH_TOKEN` | `pd.OAuthClient` | Endpoints that reject API keys (Workload Identity Federation, [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137)) |
+| OAuth bearer (`org:admin`, or `workspace:manage_tunnels` for MCP tunnels) | `auth_token` | `ANTHROPIC_AUTH_TOKEN` | `pd.OAuthClient` | Endpoints that reject API keys (Workload Identity Federation, [#137](https://github.com/ippontech/terraform-provider-anthropic/issues/137); MCP tunnels, with a token of the other scope in a separate, aliased provider block) |
 | OAuth bearer minted by WIF | `federation` block | `ANTHROPIC_FEDERATION_RULE_ID` etc. fill it, never enable it | `pd.OAuthClient` | Same as `auth_token`, which it conflicts with; it wins over `ANTHROPIC_AUTH_TOKEN` |
 
 `resolveCredential` (`internal/provider/provider.go`) takes the provider argument when set, the env var otherwise; an Unknown value at plan time counts as unset.
