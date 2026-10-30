@@ -20,6 +20,10 @@ var platformBeta = map[platform.Platform]struct{ block, guide string }{
 		block: "aws",
 		guide: "https://registry.terraform.io/providers/ippontech/anthropic/latest/docs/guides/claude_platform_on_aws",
 	},
+	platform.GoogleCloud: {
+		block: "google_cloud",
+		guide: "https://registry.terraform.io/providers/ippontech/anthropic/latest/docs/guides/claude_models_on_google_cloud",
+	},
 }
 
 // addPlatformBetaWarning adds, on the platform block, the warning that the
