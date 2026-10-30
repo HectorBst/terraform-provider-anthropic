@@ -19,7 +19,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -149,6 +151,20 @@ var agentCustomToolAttrTypes = map[string]attr.Type{
 // --- Permission policy validators (reused across tool schemas) ---
 
 var permissionPolicyValidator = stringvalidator.OneOf("always_allow", "always_ask")
+
+// Documented API defaults of a toolset's `default_config`. They are the schema
+// defaults of `default_enabled` and `default_permission_policy`, so a value the
+// configuration leaves unset is planned rather than kept from refresh, and a
+// change made outside Terraform shows as a diff that the next apply reverts.
+// They come from the documentation, not from a live call (read 2026-10-30): the
+// permission policies page ("the agent toolset defaults to `always_allow`, and
+// MCP toolsets default to `always_ask`") and the agents create and update
+// reference (`default_config.enabled`: "Defaults to true if not specified").
+const (
+	toolsetDefaultEnabled               = true
+	agentToolsetDefaultPermissionPolicy = "always_allow"
+	mcpToolsetDefaultPermissionPolicy   = "always_ask"
+)
 
 // uniqueMCPServerNamesValidator rejects two mcp_toolsets entries for the same
 // server: mapMCPToolsetsToState matches toolsets by server name and keeps one
@@ -292,15 +308,20 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				MarkdownDescription: "Configuration for built-in agent tools (bash, edit, read, write, glob, grep, web_fetch, web_search).",
 				Attributes: map[string]schema.Attribute{
 					"default_enabled": schema.BoolAttribute{
-						Optional:            true,
-						Computed:            true,
-						MarkdownDescription: "Whether tools are enabled by default. Defaults to `true`.",
+						Optional: true,
+						Computed: true,
+						Default:  booldefault.StaticBool(toolsetDefaultEnabled),
+						MarkdownDescription: "Whether tools are enabled by default. Defaults to `true`, the API's documented default. " +
+							"When unset, the plan holds the default, so a value changed outside Terraform is reverted on the next apply.",
 					},
 					"default_permission_policy": schema.StringAttribute{
-						Optional:            true,
-						Computed:            true,
-						MarkdownDescription: "Default permission policy: `always_allow` or `always_ask`.",
-						Validators:          []validator.String{permissionPolicyValidator},
+						Optional: true,
+						Computed: true,
+						Default:  stringdefault.StaticString(agentToolsetDefaultPermissionPolicy),
+						MarkdownDescription: "Default permission policy: `always_allow` or `always_ask`. " +
+							"Defaults to `always_allow`, the API's documented default for the built-in toolset. " +
+							"When unset, the plan holds the default, so a policy changed outside Terraform is reverted on the next apply.",
+						Validators: []validator.String{permissionPolicyValidator},
 					},
 					"configs": schema.ListNestedAttribute{
 						Optional:            true,
@@ -339,15 +360,20 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 							MarkdownDescription: "Name of the MCP server (must match a name in `mcp_servers`).",
 						},
 						"default_enabled": schema.BoolAttribute{
-							Optional:            true,
-							Computed:            true,
-							MarkdownDescription: "Whether MCP tools are enabled by default.",
+							Optional: true,
+							Computed: true,
+							Default:  booldefault.StaticBool(toolsetDefaultEnabled),
+							MarkdownDescription: "Whether MCP tools are enabled by default. Defaults to `true`, the API's documented default. " +
+								"When unset, the plan holds the default, so a value changed outside Terraform is reverted on the next apply.",
 						},
 						"default_permission_policy": schema.StringAttribute{
-							Optional:            true,
-							Computed:            true,
-							MarkdownDescription: "Default permission policy: `always_allow` or `always_ask`.",
-							Validators:          []validator.String{permissionPolicyValidator},
+							Optional: true,
+							Computed: true,
+							Default:  stringdefault.StaticString(mcpToolsetDefaultPermissionPolicy),
+							MarkdownDescription: "Default permission policy: `always_allow` or `always_ask`. " +
+								"Defaults to `always_ask`, the API's documented default for MCP toolsets, so that a tool added to the server later needs approval. " +
+								"When unset, the plan holds the default, so a policy changed outside Terraform (to `always_allow`, say) is reverted on the next apply.",
+							Validators: []validator.String{permissionPolicyValidator},
 						},
 						"configs": schema.ListNestedAttribute{
 							Optional:            true,
