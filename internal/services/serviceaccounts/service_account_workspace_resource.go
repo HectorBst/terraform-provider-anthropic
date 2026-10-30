@@ -231,7 +231,7 @@ func (r *ServiceAccountWorkspaceResource) Update(ctx context.Context, req resour
 
 	_, err := updateServiceAccountWorkspaceRole(ctx, r.client, serviceAccountID, workspaceID, role)
 	var apierr *anthropic.Error
-	if errors.As(err, &apierr) && apierr.StatusCode == 404 {
+	if errors.As(err, &apierr) && apierr.StatusCode == http.StatusNotFound {
 		tflog.Warn(ctx, "service account workspace membership not found on role update; adding it back with the planned role",
 			map[string]any{"service_account_id": serviceAccountID, "workspace_id": workspaceID})
 		if _, addErr := addServiceAccountToWorkspace(ctx, r.client, serviceAccountID, workspaceID, role); addErr != nil {

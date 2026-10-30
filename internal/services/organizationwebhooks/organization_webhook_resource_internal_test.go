@@ -272,9 +272,7 @@ func TestDoOrganizationWebhookRequest_serializesWrites(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
 	for i := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			method, path := http.MethodPost, organizationWebhooksPath
 			if i%2 == 1 {
 				method, path = http.MethodDelete, organizationWebhookPath(testWebhookID)
@@ -282,7 +280,7 @@ func TestDoOrganizationWebhookRequest_serializesWrites(t *testing.T) {
 			if _, err := doOrganizationWebhookRequest(context.Background(), client, method, path, nil); err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

@@ -313,11 +313,13 @@ func TestPluginSourceHashModifier_invalidSourceFailsThePlan(t *testing.T) {
 
 	for name, damage := range map[string]func(t *testing.T, root string){
 		"symbolic link added": func(t *testing.T, root string) {
+			t.Helper()
 			if err := os.Symlink(filepath.Join(root, "skills"), filepath.Join(root, "node_modules")); err != nil {
 				t.Fatal(err)
 			}
 		},
 		"manifest moved": func(t *testing.T, root string) {
+			t.Helper()
 			if err := os.Rename(filepath.Join(root, ".claude-plugin"), filepath.Join(root, "claude-plugin")); err != nil {
 				t.Fatal(err)
 			}
@@ -430,7 +432,7 @@ func TestPluginsRequest_uploadOutlastsTheClientTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := uploadPluginVersion(context.Background(), client, src, "plugin_01", ""); err != nil {
+	if err := uploadPluginVersion(context.Background(), client, src, "plugin_01", ""); err != nil {
 		t.Errorf("upload: %v, want it to outlast the client's own timeout", err)
 	}
 	if _, err := getPlugin(context.Background(), client, "plugin_01"); err == nil {

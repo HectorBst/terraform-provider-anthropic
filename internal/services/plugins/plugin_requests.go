@@ -75,7 +75,7 @@ func createPlugin(ctx context.Context, client *admin.Client, src pluginSource, m
 // `registration_pending`, as the API documents: by uploading the same files
 // again as a version of the plugin it stored.
 func completePluginRegistration(ctx context.Context, client *admin.Client, src pluginSource, pluginID, releaseNotes string) (*pluginAPIObject, error) {
-	if _, err := uploadPluginVersion(ctx, client, src, pluginID, releaseNotes); err != nil {
+	if err := uploadPluginVersion(ctx, client, src, pluginID, releaseNotes); err != nil {
 		return nil, fmt.Errorf("plugin %s was created but its registration did not complete, and uploading the same files "+
 			"as a version to complete it failed: %w. Import the plugin with `terraform import`, then apply again", pluginID, err)
 	}
@@ -111,16 +111,17 @@ func deletePlugin(ctx context.Context, client *admin.Client, pluginID string) er
 }
 
 // uploadPluginVersion uploads src as a new version of an existing plugin.
-func uploadPluginVersion(ctx context.Context, client *admin.Client, src pluginSource, pluginID, releaseNotes string) (*pluginVersionAPIObject, error) {
+func uploadPluginVersion(ctx context.Context, client *admin.Client, src pluginSource, pluginID, releaseNotes string) error {
 	var fields []formField
 	if releaseNotes != "" {
 		fields = append(fields, formField{name: "release_notes", value: releaseNotes})
 	}
 	body, _, err := src.uploadBody(fields...)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return postPluginVersion(ctx, client, pluginID, body)
+	_, err = postPluginVersion(ctx, client, pluginID, body)
+	return err
 }
 
 // postPluginVersion sends an already-built version upload.

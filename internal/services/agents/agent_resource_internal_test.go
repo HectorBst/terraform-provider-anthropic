@@ -487,10 +487,10 @@ func parseAgentWithTools(t *testing.T, tools string) *anthropic.BetaManagedAgent
 	return &agent
 }
 
-func mcpToolsetsFromState(t *testing.T, data AgentResourceModel) []agentMCPToolsetModel {
+func mcpToolsetsFromState(ctx context.Context, t *testing.T, data AgentResourceModel) []agentMCPToolsetModel {
 	t.Helper()
 	var toolsets []agentMCPToolsetModel
-	if diags := data.MCPToolsets.ElementsAs(context.Background(), &toolsets, false); diags.HasError() {
+	if diags := data.MCPToolsets.ElementsAs(ctx, &toolsets, false); diags.HasError() {
 		t.Fatalf("read mcp_toolsets: %+v", diags)
 	}
 	return toolsets
@@ -538,7 +538,7 @@ func TestMapMCPToolsetsToState_outOfBandConfigOnNullConfigs(t *testing.T) {
 	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
-	toolsets := mcpToolsetsFromState(t, data)
+	toolsets := mcpToolsetsFromState(t.Context(), t, data)
 	if len(toolsets) != 1 {
 		t.Fatalf("got %d toolsets, want 1", len(toolsets))
 	}
@@ -569,7 +569,7 @@ func TestMapMCPToolsetsToState_outOfBandToolset(t *testing.T) {
 	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
-	toolsets := mcpToolsetsFromState(t, data)
+	toolsets := mcpToolsetsFromState(t.Context(), t, data)
 	if len(toolsets) != 2 {
 		t.Fatalf("got %d toolsets, want 2", len(toolsets))
 	}
@@ -786,7 +786,7 @@ func TestMapToolConfigsToState_autoDefault(t *testing.T) {
 	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
-	toolsets := mcpToolsetsFromState(t, data)
+	toolsets := mcpToolsetsFromState(t.Context(), t, data)
 	if len(toolsets) != 1 || toolsets[0].DefaultPermissionPolicy.ValueString() != "auto" {
 		t.Fatalf("got toolsets %+v, want github with an auto default", toolsets)
 	}
@@ -835,7 +835,7 @@ func TestMapMCPToolsetsToState_import(t *testing.T) {
 	if diags := mapAgentResponseToState(context.Background(), agent, &data, readMapping); diags.HasError() {
 		t.Fatalf("diags: %+v", diags)
 	}
-	toolsets := mcpToolsetsFromState(t, data)
+	toolsets := mcpToolsetsFromState(t.Context(), t, data)
 	if len(toolsets) != 1 {
 		t.Fatalf("got %d toolsets, want 1", len(toolsets))
 	}
@@ -865,7 +865,7 @@ const unplannedTools = `[
 // with every list, map and object typed null so the framework can encode it.
 func agentModelFor(agent *anthropic.BetaManagedAgentsAgent) AgentResourceModel {
 	return AgentResourceModel{
-		Model:             types.StringValue(string(agent.Model.ID)),
+		Model:             types.StringValue(agent.Model.ID),
 		Name:              types.StringValue(agent.Name),
 		Metadata:          types.MapNull(types.StringType),
 		MCPServers:        types.ListNull(types.ObjectType{AttrTypes: agentMCPServerAttrTypes}),
@@ -995,7 +995,7 @@ func TestAgentResource_unplannedToolSettings(t *testing.T) {
 		if got := toolConfigsFromList(t, toolset.Configs); len(got) != 1 || got[0].Name.ValueString() != "bash" {
 			t.Errorf("agent_toolset.configs = %+v, want the bash config the API returns", got)
 		}
-		toolsets := mcpToolsetsFromState(t, data)
+		toolsets := mcpToolsetsFromState(ctx, t, data)
 		if len(toolsets) != 2 || toolsets[1].MCPServerName.ValueString() != "billing" {
 			t.Fatalf("mcp_toolsets = %+v, want crm, then the unplanned billing", toolsets)
 		}
@@ -1053,7 +1053,7 @@ func TestAgentResource_readConfigsEqualToDefaults(t *testing.T) {
 		if diags := data.AgentToolset.As(ctx, &toolset, basetypes.ObjectAsOptions{}); diags.HasError() {
 			t.Fatalf("read agent_toolset: %+v", diags)
 		}
-		toolsets := mcpToolsetsFromState(t, data)
+		toolsets := mcpToolsetsFromState(ctx, t, data)
 		if len(toolsets) != 1 {
 			t.Fatalf("mcp_toolsets = %+v, want crm", toolsets)
 		}
@@ -1329,7 +1329,7 @@ func agentServer(t *testing.T, agent *anthropic.BetaManagedAgentsAgent) *AgentRe
 // plannedAgent plans agent as it is, except for the toolsets.
 func plannedAgent(agent *anthropic.BetaManagedAgentsAgent, toolset types.Object, mcpToolsets types.List) AgentResourceModel {
 	return AgentResourceModel{
-		Model:             types.StringValue(string(agent.Model.ID)),
+		Model:             types.StringValue(agent.Model.ID),
 		Name:              types.StringValue(agent.Name),
 		Metadata:          types.MapNull(types.StringType),
 		MCPServers:        types.ListNull(types.ObjectType{AttrTypes: agentMCPServerAttrTypes}),

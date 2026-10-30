@@ -299,8 +299,8 @@ func TestServiceAccountWorkspaceSchema_OnlyIDsRequireReplace(t *testing.T) {
 // --- Update: in place, no remove/re-add ---
 
 // serviceAccountWorkspaceUpdateRequest builds the Update request for a membership
-// whose role changes from oldRole to newRole.
-func serviceAccountWorkspaceUpdateRequest(t *testing.T, r *ServiceAccountWorkspaceResource, oldRole, newRole string) (resource.UpdateRequest, *resource.UpdateResponse) {
+// whose role changes from workspace_developer to workspace_admin.
+func serviceAccountWorkspaceUpdateRequest(t *testing.T, r *ServiceAccountWorkspaceResource) (resource.UpdateRequest, *resource.UpdateResponse) {
 	t.Helper()
 
 	s := schematest.ResourceSchema(t, r)
@@ -308,12 +308,12 @@ func serviceAccountWorkspaceUpdateRequest(t *testing.T, r *ServiceAccountWorkspa
 		ID:               types.StringValue("svac_01ABC:wrkspc_01XYZ"),
 		ServiceAccountID: types.StringValue("svac_01ABC"),
 		WorkspaceID:      types.StringValue("wrkspc_01XYZ"),
-		WorkspaceRole:    types.StringValue(oldRole),
+		WorkspaceRole:    types.StringValue("workspace_developer"),
 		Implicit:         types.BoolValue(false),
 		CreatedByActorID: types.StringValue("user_01CREATOR"),
 	}
 	plan := state
-	plan.WorkspaceRole = types.StringValue(newRole)
+	plan.WorkspaceRole = types.StringValue("workspace_admin")
 
 	planTF := tfsdk.Plan{Schema: s}
 	if diags := planTF.Set(context.Background(), &plan); diags.HasError() {
@@ -349,7 +349,7 @@ func TestServiceAccountWorkspaceUpdate_ChangesRoleInPlace(t *testing.T) {
 	defer srv.Close()
 
 	r := &ServiceAccountWorkspaceResource{client: oauthtest.NewClient(t, srv)}
-	req, resp := serviceAccountWorkspaceUpdateRequest(t, r, "workspace_developer", "workspace_admin")
+	req, resp := serviceAccountWorkspaceUpdateRequest(t, r)
 
 	r.Update(context.Background(), req, resp)
 	if resp.Diagnostics.HasError() {
@@ -391,7 +391,7 @@ func TestServiceAccountWorkspaceUpdate_ErrorKeepsAPIMessage(t *testing.T) {
 	defer srv.Close()
 
 	r := &ServiceAccountWorkspaceResource{client: oauthtest.NewClient(t, srv)}
-	req, resp := serviceAccountWorkspaceUpdateRequest(t, r, "workspace_developer", "workspace_admin")
+	req, resp := serviceAccountWorkspaceUpdateRequest(t, r)
 
 	r.Update(context.Background(), req, resp)
 	if !resp.Diagnostics.HasError() {
@@ -436,7 +436,7 @@ func TestServiceAccountWorkspaceUpdate_MembershipGoneIsAddedBack(t *testing.T) {
 	defer srv.Close()
 
 	r := &ServiceAccountWorkspaceResource{client: oauthtest.NewClient(t, srv)}
-	req, resp := serviceAccountWorkspaceUpdateRequest(t, r, "workspace_developer", "workspace_admin")
+	req, resp := serviceAccountWorkspaceUpdateRequest(t, r)
 
 	r.Update(context.Background(), req, resp)
 	if resp.Diagnostics.HasError() {
@@ -479,7 +479,7 @@ func TestServiceAccountWorkspaceUpdate_KeepsPlannedComputedValues(t *testing.T) 
 	defer srv.Close()
 
 	r := &ServiceAccountWorkspaceResource{client: oauthtest.NewClient(t, srv)}
-	req, resp := serviceAccountWorkspaceUpdateRequest(t, r, "workspace_developer", "workspace_admin")
+	req, resp := serviceAccountWorkspaceUpdateRequest(t, r)
 
 	r.Update(context.Background(), req, resp)
 	if resp.Diagnostics.HasError() {
