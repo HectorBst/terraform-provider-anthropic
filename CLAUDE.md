@@ -48,6 +48,8 @@ Each directory below has a `CLAUDE.md` with the load-bearing details of its reso
 - `organizationwebhooks/`: see its `CLAUDE.md`.
 - `serviceaccounts/`: `service_account`, `service_account_workspace`; `service_account(s)`, `service_account_workspaces`. OAuth bearer.
 - `skills/`: `skill`, `skill_version`; `skill(s)`, `skill_version(s)`. Standard key.
+- `telemetrydestinations/`: anthropic_telemetry_destination resource (OpenTelemetry export; admin API, raw `admin.Client`, beta header `telemetry-destinations-2026-08-11` on every call via `doTelemetryRequest`).
+- `telemetrydestinations/`: see its `CLAUDE.md`.
 - `userprofiles/`: `user_profile`; `user_profile(s)`. Standard key (beta not enabled for the test organization).
 - `vaults/`: `vault`, `vault_credential`; none. Standard key. Also holds the vaults read-after-write measurements.
 - `workspaces/`: `workspace`, `workspace_member`; `workspace(s)`, `workspace_member(s)`, `workspace_rate_limits`. Admin key.
@@ -250,6 +252,8 @@ A secret the API **generates** and returns only on create (or on an explicit reg
 
 In a `ConfigValidator`, treat Unknown values (unresolved references at plan time) as neither set nor missing, or valid configurations fail spuriously: `isMissing(v) = v.IsNull() && !v.IsUnknown()` for required checks, `isSet(v) = !v.IsNull() && !v.IsUnknown()` for conflicting-attribute checks. Reference: `vaultCredentialConfigValidator`.
 
+### Defaults inside an Optional + Computed object
+Do not put a schema `Default` on an attribute nested in an Optional + Computed single-nested attribute whose omission means "keep the API's values". The framework applies nested defaults to the proposed new state, which for an omitted block is the prior state's object, so the default overwrites the stored value, the plan differs from state, and every Computed attribute is marked unknown before `UseStateForUnknown` restores the block: a spurious update on every plan. Make the nested attribute Optional + Computed and plan the default with a modifier that only acts when the block is configured (`tracesDefaultString`/`tracesDefaultBool` in `internal/services/telemetrydestinations/telemetry_destination_resource.go`).
 ### Map attributes with PATCH semantics (metadata)
 
 The API's `metadata` uses PATCH semantics on update: omitted keys are kept, a key set to `null` is deleted (agents: https://platform.claude.com/docs/en/api/beta/agents/update; environments also delete a key set to `""`). Sending only the planned map cannot remove a key dropped from the configuration, and `{}` changes nothing; the API keeps the keys and Terraform reports an inconsistent result after apply. Use `tfvalue.MetadataPatch(ctx, plan, state)`: it upserts planned keys and sets keys present in the prior state but absent from the plan to `nil` (a null plan deletes them all), sent with `params.SetExtraFields(map[string]any{"metadata": patch})` because the typed `map[string]string` cannot carry nulls; omit the field when the patch is empty. `SetExtraFields` replaces the extra fields, so a resource that sends another one (agent: `multiagent: null`) collects them in one map and calls it once. `anthropic_agent` and `anthropic_environment` use it; vaults, vault credentials, memory stores and deployments still have local copies (`buildMetadataPatch`), to be replaced in [#296](https://github.com/ippontech/terraform-provider-anthropic/issues/296) PR 1. Clear a nullable scalar such as `display_name` with `param.Null[string]()`, not by omitting it.
