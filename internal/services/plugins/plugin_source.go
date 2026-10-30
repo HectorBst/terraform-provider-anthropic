@@ -13,6 +13,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"github.com/ippontech/terraform-provider-anthropic/internal/admin"
@@ -70,33 +71,68 @@ type formField struct {
 // skipped, the way the API refuses them inside an archive.
 func listPluginSource(dir, archive string) (pluginSource, error) {
 	if archive != "" {
-		info, err := os.Stat(archive)
-		if err != nil {
-			return pluginSource{}, fmt.Errorf("unable to read source_archive %q: %w", archive, err)
-		}
-		if !info.Mode().IsRegular() {
-			return pluginSource{}, fmt.Errorf("source_archive %q is not a regular file", archive)
-		}
-		return pluginSource{
-			archive: true,
-			files:   []pluginSourceFile{{name: filepath.Base(archive), path: archive, size: info.Size()}},
-		}, nil
+		return listPluginArchive(archive)
 	}
 
-	// Resolve a symlinked root once, so the walk below (which never follows
-	// links) starts from the real directory.
-	root, err := filepath.EvalSymlinks(dir)
+	root, err := pluginSourceRoot(dir)
+	if err != nil {
+		return pluginSource{}, err
+	}
+	files, err := walkPluginDir(root)
 	if err != nil {
 		return pluginSource{}, fmt.Errorf("unable to read source_dir %q: %w", dir, err)
 	}
-	if info, err := os.Stat(root); err != nil {
-		return pluginSource{}, fmt.Errorf("unable to read source_dir %q: %w", dir, err)
-	} else if !info.IsDir() {
-		return pluginSource{}, fmt.Errorf("source_dir %q is not a directory", dir)
+
+	// Sort by upload name, so the hash does not depend on the platform's path
+	// separator or on the walk order.
+	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+
+	if !slices.ContainsFunc(files, func(f pluginSourceFile) bool { return f.name == pluginManifestPath }) {
+		return pluginSource{}, fmt.Errorf("source_dir %q has no %s: every plugin needs its manifest there", dir, pluginManifestPath)
 	}
 
+	return pluginSource{files: files}, nil
+}
+
+// listPluginArchive is the source of a single `.zip` or `.plugin` archive,
+// named by its base name.
+func listPluginArchive(archive string) (pluginSource, error) {
+	info, err := os.Stat(archive)
+	if err != nil {
+		return pluginSource{}, fmt.Errorf("unable to read source_archive %q: %w", archive, err)
+	}
+	if !info.Mode().IsRegular() {
+		return pluginSource{}, fmt.Errorf("source_archive %q is not a regular file", archive)
+	}
+	return pluginSource{
+		archive: true,
+		files:   []pluginSourceFile{{name: filepath.Base(archive), path: archive, size: info.Size()}},
+	}, nil
+}
+
+// pluginSourceRoot resolves a symlinked source_dir once, so the walk (which
+// never follows links) starts from the real directory, and checks that it is
+// a directory.
+func pluginSourceRoot(dir string) (string, error) {
+	root, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", fmt.Errorf("unable to read source_dir %q: %w", dir, err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("unable to read source_dir %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("source_dir %q is not a directory", dir)
+	}
+	return root, nil
+}
+
+// walkPluginDir lists every regular file under root, in walk order, leaving
+// out Git metadata.
+func walkPluginDir(root string) ([]pluginSourceFile, error) {
 	var files []pluginSourceFile
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -112,40 +148,31 @@ func listPluginSource(dir, archive string) (pluginSource, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if !d.Type().IsRegular() {
-			return fmt.Errorf("%q is not a regular file: symbolic links and special files cannot be uploaded", p)
-		}
-		info, err := d.Info()
+		f, err := pluginDirFile(root, p, d)
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		files = append(files, pluginSourceFile{name: filepath.ToSlash(rel), path: p, size: info.Size()})
+		files = append(files, f)
 		return nil
 	})
+	return files, err
+}
+
+// pluginDirFile describes the file p met by the walk of root, refusing a
+// symbolic link or a special file.
+func pluginDirFile(root, p string, d fs.DirEntry) (pluginSourceFile, error) {
+	if !d.Type().IsRegular() {
+		return pluginSourceFile{}, fmt.Errorf("%q is not a regular file: symbolic links and special files cannot be uploaded", p)
+	}
+	info, err := d.Info()
 	if err != nil {
-		return pluginSource{}, fmt.Errorf("unable to read source_dir %q: %w", dir, err)
+		return pluginSourceFile{}, err
 	}
-
-	// Sort by upload name, so the hash does not depend on the platform's path
-	// separator or on the walk order.
-	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
-
-	hasManifest := false
-	for _, f := range files {
-		if f.name == pluginManifestPath {
-			hasManifest = true
-			break
-		}
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
+		return pluginSourceFile{}, err
 	}
-	if !hasManifest {
-		return pluginSource{}, fmt.Errorf("source_dir %q has no %s: every plugin needs its manifest there", dir, pluginManifestPath)
-	}
-
-	return pluginSource{files: files}, nil
+	return pluginSourceFile{name: filepath.ToSlash(rel), path: p, size: info.Size()}, nil
 }
 
 // hash returns the SHA-256 of the source, streaming the files from disk: for
