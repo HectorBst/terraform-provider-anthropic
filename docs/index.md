@@ -216,13 +216,15 @@ The [Claude Platform on AWS](guides/claude_platform_on_aws) and [Claude Models o
 Every resource and data source works on the Claude API. On a cloud platform, a type the gateway does not serve fails at plan time with an error naming the platform, before any request; an unverified type is allowed. Types missing from this table are supported on every platform.
 
 <!-- platform-availability:start -->
-
 | Type | Kind | Claude Platform on AWS | Claude Models on Google Cloud (Anthropic managed) |
 |---|---|---|---|
 | `anthropic_api_key` | resource, data source | Unavailable | Unavailable |
 | `anthropic_api_keys` | data source | Unavailable | Unavailable |
+| `anthropic_compliance_settings` | resource | Unverified | Unverified |
 | `anthropic_deployment` | resource | Unverified | Supported |
 | `anthropic_deployment_runs` | data source | Unverified | Supported |
+| `anthropic_external_key` | resource, data source | Unverified | Unverified |
+| `anthropic_external_keys` | data source | Unverified | Unverified |
 | `anthropic_federation_issuer` | resource, data source | Unavailable | Unavailable |
 | `anthropic_federation_issuers` | data source | Unavailable | Unavailable |
 | `anthropic_federation_rule` | resource, data source | Unavailable | Unavailable |
@@ -234,18 +236,37 @@ Every resource and data source works on the Claude API. On a cloud platform, a t
 | `anthropic_organization` | data source | Unavailable | Unavailable |
 | `anthropic_organization_member` | resource, data source | Unavailable | Unavailable |
 | `anthropic_organization_members` | data source | Unavailable | Unavailable |
+| `anthropic_organization_webhook` | resource | Unverified | Unverified |
+| `anthropic_plugin` | resource, data source | Unverified | Unverified |
+| `anthropic_plugin_installation_setting` | resource | Unverified | Unverified |
+| `anthropic_plugin_marketplace` | data source | Unverified | Unverified |
+| `anthropic_plugin_marketplace_settings` | resource | Unverified | Unverified |
+| `anthropic_plugin_marketplaces` | data source | Unverified | Unverified |
+| `anthropic_plugin_version` | resource | Unverified | Unverified |
+| `anthropic_plugin_versions` | data source | Unverified | Unverified |
+| `anthropic_plugins` | data source | Unverified | Unverified |
+| `anthropic_rbac_group` | resource, data source | Unverified | Unverified |
+| `anthropic_rbac_group_member` | resource | Unverified | Unverified |
+| `anthropic_rbac_groups` | data source | Unverified | Unverified |
 | `anthropic_service_account` | resource, data source | Unavailable | Unavailable |
 | `anthropic_service_account_workspace` | resource | Unavailable | Unavailable |
 | `anthropic_service_account_workspaces` | data source | Unavailable | Unavailable |
 | `anthropic_service_accounts` | data source | Unavailable | Unavailable |
+| `anthropic_spend_limit` | resource | Unverified | Unverified |
+| `anthropic_telemetry_destination` | resource | Unverified | Unverified |
+| `anthropic_tunnel` | resource, data source | Unverified | Unverified |
+| `anthropic_tunnel_certificate` | resource | Unverified | Unverified |
+| `anthropic_tunnels` | data source | Unverified | Unverified |
 | `anthropic_user_profile` | resource, data source | Supported | Unverified |
 | `anthropic_user_profiles` | data source | Supported | Unverified |
+| `anthropic_vault` | data source | Unverified | Unverified |
+| `anthropic_vaults` | data source | Unverified | Unverified |
 | `anthropic_workspace` | resource, data source | Supported | Unavailable |
 | `anthropic_workspace_member` | resource, data source | Unavailable | Unavailable |
 | `anthropic_workspace_members` | data source | Unavailable | Unavailable |
+| `anthropic_workspace_rate_limit` | resource | Unverified | Unverified |
 | `anthropic_workspace_rate_limits` | data source | Unavailable | Unavailable |
 | `anthropic_workspaces` | data source | Supported | Unavailable |
-
 <!-- platform-availability:end -->
 
 On Claude Platform on AWS, the gateway serves only the workspace, external key and telemetry destination routes of the Admin API: AWS IAM manages organization and workspace membership, and API keys are generated in the AWS Console. It accepts no OAuth token, so Workload Identity Federation does not apply. Scheduled deployments are listed by the platform page but not by the gateway's route table, which denies unlisted routes, hence unverified; their agent also needs an `aws_role` execution identity.
@@ -284,9 +305,9 @@ provider "anthropic" {}
 
 - `admin_api_key` (String, Sensitive) The key for the Admin API's organization management endpoints (workspaces and their members, workspace rate limits, API keys, the organization, organization members and invites): a Claude Console Admin API key (`sk-ant-admin01-...`), a Claude Enterprise Admin API key with scopes (`sk-ant-api01-...`, members and invites only), or a personal or service account key not scoped to a workspace. Sent in the `x-api-key` header. Can also be set via the ANTHROPIC_ADMIN_API_KEY environment variable.
 - `api_key` (String, Sensitive) The Anthropic API key. Can also be set via the ANTHROPIC_API_KEY environment variable.
-- `auth_token` (String, Sensitive) An org:admin OAuth bearer token (`sk-ant-oat01-...`) for endpoints that reject API keys, such as the Workload Identity Federation admin endpoints. Can also be set via the ANTHROPIC_AUTH_TOKEN environment variable.
+- `auth_token` (String, Sensitive) An OAuth bearer token for endpoints that reject API keys: an org:admin token (`sk-ant-oat01-...`) for the Workload Identity Federation admin endpoints, or a workspace:manage_tunnels token for MCP tunnels (configure each in its own, aliased provider block). Can also be set via the ANTHROPIC_AUTH_TOKEN environment variable.
 - `aws` (Attributes) **Beta.** Reach Claude Platform on AWS instead of the Claude API: the provider alias then manages the Anthropic organization tied to an AWS account, through the aws-external-anthropic gateway of one AWS region. Setting the block is what selects the platform; the AWS and ANTHROPIC_AWS_* environment variables only fill its attributes. Conflicts with api_key, admin_api_key, auth_token, federation and google_cloud, and the ANTHROPIC_API_KEY, ANTHROPIC_ADMIN_API_KEY, ANTHROPIC_AUTH_TOKEN and ANTHROPIC_BASE_URL variables are ignored: no first-party credential is valid there. workspace_id is required. Requests are signed with AWS SigV4 (service aws-external-anthropic), with credentials from access_key/secret_key, profile or the AWS default chain, unless api_key is set. Resources the gateway does not serve fail at plan time. Support for this platform is verified with offline tests only, and the provider prints a warning saying so. (see [below for nested schema](#nestedatt--aws))
-- `federation` (Attributes) Obtain the org:admin OAuth bearer token through Workload Identity Federation instead of `auth_token`. The provider exchanges an identity token from your platform (a CI OIDC token, a Kubernetes projected service account token, an Entra token...) for an Anthropic access token, and exchanges again before it expires, fetching a fresh identity token each time. Every attribute falls back to the environment variable the Anthropic SDKs read. Conflicts with `auth_token`; an exported ANTHROPIC_AUTH_TOKEN is ignored, with a warning. Give the federation rule a `token_lifetime_seconds` well above 120: the SDK refreshes within the last 120 seconds of a token's life, so a shorter lifetime refreshes, and fetches an identity token, on nearly every request. (see [below for nested schema](#nestedatt--federation))
+- `federation` (Attributes) Obtain the OAuth bearer token through Workload Identity Federation instead of `auth_token`. The federation rule's scope decides which endpoints the token can call: org:admin for the Workload Identity Federation admin endpoints, workspace:manage_tunnels for MCP tunnels. The provider exchanges an identity token from your platform (a CI OIDC token, a Kubernetes projected service account token, an Entra token...) for an Anthropic access token, and exchanges again before it expires, fetching a fresh identity token each time. Every attribute falls back to the environment variable the Anthropic SDKs read. Conflicts with `auth_token`; an exported ANTHROPIC_AUTH_TOKEN is ignored, with a warning. Give the federation rule a `token_lifetime_seconds` well above 120: the SDK refreshes within the last 120 seconds of a token's life, so a shorter lifetime refreshes, and fetches an identity token, on nearly every request. (see [below for nested schema](#nestedatt--federation))
 - `google_cloud` (Attributes) **Beta.** Reach Claude Models on Google Cloud (Anthropic managed) instead of the Claude API: the provider alias then manages the Anthropic organization tied to a Google Cloud project, through claude.googleapis.com. Setting the block is what selects the platform; the ANTHROPIC_GOOGLE_CLOUD_* and GOOGLE_CLOUD_PROJECT environment variables only fill its attributes. Conflicts with api_key, admin_api_key, auth_token, federation and aws, and the first-party ANTHROPIC_* variables are ignored. Requests carry a Google access token (cloud-platform scope) from credentials, access_token or Application Default Credentials. workspace_id goes into the request URL, never into a header, and may be left unset only for an alias limited to organization routes. Resources the gateway does not serve fail at plan time. Support for this platform is verified with offline tests only, and the provider prints a warning saying so. (see [below for nested schema](#nestedatt--google_cloud))
 - `workspace_id` (String) Workspace (`wrkspc_...`) the standard API key acts in, sent as the `anthropic-workspace-id` header on every request of the standard client. Required with a personal or service account key that is not scoped to a single workspace; must be left unset with a single-workspace key, which the API rejects with a 404 when the header names any workspace, its own included. Not sent on the Admin API or the org:admin OAuth client, which select their workspace otherwise. Has no environment fallback: ANTHROPIC_WORKSPACE_ID is read by `federation.workspace_id` only. With the aws block: required, sent on every request except the Admin API ones, and read from ANTHROPIC_AWS_WORKSPACE_ID when unset. With the google_cloud block: part of the request URL, never a header, required except for an alias limited to organization routes, and read from ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID when unset.
 
