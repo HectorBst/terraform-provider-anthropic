@@ -316,6 +316,8 @@ func (p *AnthropicProvider) Resources(ctx context.Context) []func() resource.Res
 		organizationwebhooks.NewOrganizationWebhookResource,
 		rbac.NewRBACGroupResource,
 		rbac.NewRBACGroupMemberResource,
+		plugins.NewPluginInstallationSettingResource,
+		plugins.NewPluginMarketplaceSettingsResource,
 		plugins.NewPluginResource,
 		plugins.NewPluginVersionResource,
 		serviceaccounts.NewServiceAccountResource,
