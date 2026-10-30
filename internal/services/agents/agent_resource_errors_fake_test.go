@@ -4,6 +4,7 @@
 package agents_test
 
 import (
+	"net/http"
 	"regexp"
 	"testing"
 
@@ -14,6 +15,120 @@ import (
 
 	"github.com/ippontech/terraform-provider-anthropic/internal/providertest"
 )
+
+// An agent archived outside Terraform is dropped by the refresh, as one
+// deleted would be, and re-created by the next apply: the API keeps archived
+// agents ("archived_at: When the agent was archived",
+// https://platform.claude.com/docs/en/api/beta/agents/retrieve), but an
+// archived agent cannot be used.
+func TestAgentResource_archivedOutOfBandIsRecreated(t *testing.T) {
+	t.Parallel()
+	srv := newAgentsFake(t)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
+		CheckDestroy:             checkAgentsArchived(srv),
+		Steps: []resource.TestStep{
+			{
+				Config:            agentConfig(""),
+				ConfigPlanChecks:  expectAgentCreated,
+				ConfigStateChecks: []statecheck.StateCheck{expectAttr("id", str(agentID(1)))},
+			},
+			{
+				PreConfig: func() {
+					if _, ok := srv.agents.Archive(agentID(1)); !ok {
+						t.Fatalf("%s is not in the fake", agentID(1))
+					}
+				},
+				Config:            agentConfig(""),
+				ConfigPlanChecks:  expectAgentCreated,
+				ConfigStateChecks: []statecheck.StateCheck{expectAttr("id", str(agentID(2))), expectAttr("archived_at", null)},
+			},
+		},
+	})
+
+	srv.AssertCalled(routeCreateAgent, 2)
+	srv.AssertCalled(routeUpdateAgent, 0)
+	srv.AssertCalled(routeArchiveAgent, 1)
+	srv.assertRequestShape(t)
+}
+
+// API errors on each operation surface as error diagnostics naming the
+// operation, and are not retried (4xx, https://platform.claude.com/docs/en/api/errors).
+func TestAgentResource_apiErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("create", func(t *testing.T) {
+		t.Parallel()
+		srv := newAgentsFake(t)
+		srv.FailNext(routeCreateAgent, http.StatusBadRequest, 1)
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
+			Steps: []resource.TestStep{{
+				Config:      agentConfig(""),
+				ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+create\s+agent:.*400\s+Bad\s+Request`),
+			}},
+		})
+		srv.AssertCalled(routeCreateAgent, 1)
+		srv.AssertCalled(routeGetAgent, 0)
+	})
+
+	t.Run("read", func(t *testing.T) {
+		t.Parallel()
+		srv := newAgentsFake(t)
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
+			CheckDestroy:             checkAgentsArchived(srv),
+			Steps: []resource.TestStep{
+				{Config: agentConfig(""), ConfigPlanChecks: expectAgentCreated},
+				{
+					PreConfig:   func() { srv.FailNext(routeGetAgent, http.StatusForbidden, 1) },
+					Config:      agentConfig(""),
+					ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+read\s+agent:.*403\s+Forbidden`),
+				},
+			},
+		})
+		srv.AssertCalled(routeUpdateAgent, 0)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		t.Parallel()
+		srv := newAgentsFake(t)
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
+			CheckDestroy:             checkAgentsArchived(srv),
+			Steps: []resource.TestStep{
+				{Config: agentConfig(""), ConfigPlanChecks: expectAgentCreated},
+				{
+					PreConfig:   func() { srv.FailNext(routeUpdateAgent, http.StatusBadRequest, 1) },
+					Config:      agentConfig("  description = \"changed\"\n"),
+					ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+update\s+agent:.*400\s+Bad\s+Request`),
+				},
+			},
+		})
+		srv.AssertCalled(routeUpdateAgent, 1)
+	})
+
+	t.Run("archive", func(t *testing.T) {
+		t.Parallel()
+		srv := newAgentsFake(t)
+		resource.UnitTest(t, resource.TestCase{
+			ProtoV6ProviderFactories: providertest.ProviderFactories(srv.Server),
+			CheckDestroy:             checkAgentsArchived(srv),
+			Steps: []resource.TestStep{
+				{Config: agentConfig(""), ConfigPlanChecks: expectAgentCreated},
+				{
+					PreConfig:   func() { srv.FailNext(routeArchiveAgent, http.StatusForbidden, 1) },
+					Config:      agentConfig(""),
+					Destroy:     true,
+					ExpectError: regexp.MustCompile(`(?s)Unable\s+to\s+archive\s+agent:.*403\s+Forbidden`),
+				},
+			},
+		})
+		// The failed archive, then the one of the final destroy.
+		srv.AssertCalled(routeArchiveAgent, 2)
+	})
+}
 
 // An input_schema reaches the API as configured, with `type: object` added
 // when it has no type (the attribute's documentation), and state keeps the

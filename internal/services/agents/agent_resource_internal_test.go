@@ -1384,3 +1384,48 @@ func applyAndRead(t *testing.T, r *AgentResource, agent *anthropic.BetaManagedAg
 	}
 	return model(createResp.State), model(updateResp.State), model(readResp.State)
 }
+
+// The API returns no speed for the standard one: state keeps a configured
+// "standard" (no perpetual diff) and maps an unset or unknown speed to null;
+// a returned speed is mapped as is. The data source maps the absent speed to
+// null.
+func TestMapAgentResponseToState_modelSpeed(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, model string
+		current     types.String
+		want        types.String
+	}{
+		{"returned", `{"id":"m","speed":"fast"}`, types.StringValue("standard"), types.StringValue("fast")},
+		{"absent keeps a configured value", `{"id":"m"}`, types.StringValue("standard"), types.StringValue("standard")},
+		{"absent resolves unknown to null", `{"id":"m"}`, types.StringUnknown(), types.StringNull()},
+		{"absent stays null", `{"id":"m","speed":""}`, types.StringNull(), types.StringNull()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			data := AgentResourceModel{ModelSpeed: tc.current}
+			if diags := mapAgentResponseToState(context.Background(), parseAgentFixture(t, tc.model), &data, readMapping); diags.HasError() {
+				t.Fatalf("diags: %+v", diags)
+			}
+			if !data.ModelSpeed.Equal(tc.want) {
+				t.Errorf("model_speed = %v, want %v", data.ModelSpeed, tc.want)
+			}
+		})
+	}
+
+	t.Run("data source", func(t *testing.T) {
+		t.Parallel()
+		for model, want := range map[string]types.String{
+			`{"id":"m","speed":"fast"}`: types.StringValue("fast"),
+			`{"id":"m"}`:                types.StringNull(),
+		} {
+			var data AgentDataSourceModel
+			if diags := mapAgentResponseToDataSource(parseAgentFixture(t, model), &data); diags.HasError() {
+				t.Fatalf("diags: %+v", diags)
+			}
+			if !data.ModelSpeed.Equal(want) {
+				t.Errorf("%s: model_speed = %v, want %v", model, data.ModelSpeed, want)
+			}
+		}
+	})
+}
