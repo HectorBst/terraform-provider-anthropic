@@ -5,13 +5,11 @@ package provider
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicaws "github.com/anthropics/anthropic-sdk-go/aws"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -100,51 +98,68 @@ func awsSchema() schema.SingleNestedAttribute {
 // set and returns the SDK's client configuration for it. data.WorkspaceID is
 // known: Configure rejects an unknown one first.
 func resolveAWS(ctx context.Context, data AnthropicProviderModel) (*anthropicaws.ClientConfig, diag.Diagnostics) {
-	var diags diag.Diagnostics
-
-	// Configured values, not resolved ones: an Anthropic credential written in
-	// the configuration is a mistake to report, even when unknown at plan
-	// time, while the same credential exported in the environment is ignored
-	// (see ignoredFirstPartyEnvironment).
-	for _, other := range []struct {
-		name  string
-		value attr.Value
-	}{
-		{"api_key", data.ApiKey},
-		{"admin_api_key", data.AdminApiKey},
-		{"auth_token", data.AuthToken},
-		{"federation", data.Federation},
-	} {
-		if !other.value.IsNull() {
-			diags.AddAttributeError(path.Root("aws"), "Conflicting Platform Configuration",
-				fmt.Sprintf("aws and %s cannot both be set: the aws block reaches Claude Platform on AWS with AWS "+
-					"credentials, where no Anthropic credential is accepted. Use a separate provider alias for each "+
-					"organization.", other.name))
-		}
-	}
+	diags := firstPartyConflicts(data, "aws", "Claude Platform on AWS with AWS credentials")
 	if diags.HasError() {
 		return nil, diags
 	}
 
-	if data.AWS.IsUnknown() {
+	m, d := awsBlock(ctx, data.AWS)
+	diags.Append(d...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	diags.Append(checkAWSCredentials(m)...)
+
+	// The gateway needs the header on every inference and resource request,
+	// and the SDK refuses to build a client without it, even for an alias that
+	// only manages workspaces.
+	workspaceID := firstNonEmpty(data.WorkspaceID.ValueString(), os.Getenv(awsWorkspaceIDEnv))
+	if workspaceID == "" {
+		diags.AddAttributeError(path.Root("workspace_id"), "Missing Workspace",
+			"Claude Platform on AWS identifies the workspace of every inference and resource request by the "+
+				"anthropic-workspace-id header. Set workspace_id or the "+awsWorkspaceIDEnv+" environment variable "+
+				"(ANTHROPIC_WORKSPACE_ID is not read with the aws block). An alias that only manages workspaces "+
+				"needs one too: any workspace of the same region.")
+	}
+
+	diags.Append(checkAWSRegion(m)...)
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	return &anthropicaws.ClientConfig{
+		APIKey:             m.APIKey.ValueString(),
+		AWSAccessKey:       m.AccessKey.ValueString(),
+		AWSSecretAccessKey: m.SecretKey.ValueString(),
+		AWSSessionToken:    m.SessionToken.ValueString(),
+		AWSProfile:         m.Profile.ValueString(),
+		AWSRegion:          m.Region.ValueString(),
+		WorkspaceID:        workspaceID,
+		BaseURL:            m.BaseURL.ValueString(),
+	}, diags
+}
+
+// awsBlock reads the aws block, which may be unknown neither as a whole nor
+// in any attribute.
+func awsBlock(ctx context.Context, block types.Object) (awsModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	var m awsModel
+	if block.IsUnknown() {
 		diags.AddAttributeError(path.Root("aws"), "Unknown AWS Configuration",
 			"The aws block depends on a value that is not known until apply. Provider configuration must be known at plan time.")
-		return nil, diags
+		return m, diags
 	}
-	var m awsModel
-	diags.Append(data.AWS.As(ctx, &m, basetypes.ObjectAsOptions{})...)
+	diags.Append(block.As(ctx, &m, basetypes.ObjectAsOptions{})...)
 	if diags.HasError() {
-		return nil, diags
+		return m, diags
 	}
 
 	// Unknown is an error, not unset, as for the federation block: read as
 	// unset, an unknown region would sign for the AWS_REGION of the machine
 	// running the plan, and an unknown credential would fall back to the
 	// default chain, another identity.
-	attrs := []struct {
-		name  string
-		value types.String
-	}{
+	diags.Append(unknownBlockAttributes("aws", "Unknown AWS Configuration", []namedString{
 		{"region", m.Region},
 		{"profile", m.Profile},
 		{"api_key", m.APIKey},
@@ -152,19 +167,15 @@ func resolveAWS(ctx context.Context, data AnthropicProviderModel) (*anthropicaws
 		{"secret_key", m.SecretKey},
 		{"session_token", m.SessionToken},
 		{"base_url", m.BaseURL},
-	}
-	for _, a := range attrs {
-		if a.value.IsUnknown() {
-			diags.AddAttributeError(path.Root("aws").AtName(a.name), "Unknown AWS Configuration",
-				fmt.Sprintf("aws.%s depends on a value that is not known until apply. Provider configuration must be known at plan time.", a.name))
-		}
-	}
-	if diags.HasError() {
-		return nil, diags
-	}
+	})...)
+	return m, diags
+}
 
-	// One credential source, stated: the SDK would otherwise pick by a
-	// precedence the configuration does not show.
+// checkAWSCredentials requires one credential source, stated: the SDK would
+// otherwise pick by a precedence the configuration does not show. An access
+// key goes with its secret key, and a session token with both.
+func checkAWSCredentials(m awsModel) diag.Diagnostics {
+	var diags diag.Diagnostics
 	sources := 0
 	for _, set := range []bool{m.APIKey.ValueString() != "", m.AccessKey.ValueString() != "" || m.SecretKey.ValueString() != "", m.Profile.ValueString() != ""} {
 		if set {
@@ -183,24 +194,15 @@ func resolveAWS(ctx context.Context, data AnthropicProviderModel) (*anthropicaws
 		diags.AddAttributeError(path.Root("aws").AtName("session_token"), "Incomplete AWS Credentials",
 			"aws.session_token is only used with aws.access_key and aws.secret_key.")
 	}
+	return diags
+}
 
-	// The gateway needs the header on every inference and resource request,
-	// and the SDK refuses to build a client without it, even for an alias that
-	// only manages workspaces.
-	workspaceID := data.WorkspaceID.ValueString()
-	if workspaceID == "" {
-		workspaceID = os.Getenv(awsWorkspaceIDEnv)
-	}
-	if workspaceID == "" {
-		diags.AddAttributeError(path.Root("workspace_id"), "Missing Workspace",
-			"Claude Platform on AWS identifies the workspace of every inference and resource request by the "+
-				"anthropic-workspace-id header. Set workspace_id or the "+awsWorkspaceIDEnv+" environment variable "+
-				"(ANTHROPIC_WORKSPACE_ID is not read with the aws block). An alias that only manages workspaces "+
-				"needs one too: any workspace of the same region.")
-	}
-
-	// The SDK falls back to these variables itself; checking them here puts
-	// the error on the attribute instead of in an SDK message.
+// checkAWSRegion requires a region whenever the client signs requests or
+// derives the gateway URL from it. The SDK falls back to these variables
+// itself; checking them here puts the error on the attribute instead of in an
+// SDK message.
+func checkAWSRegion(m awsModel) diag.Diagnostics {
+	var diags diag.Diagnostics
 	region := firstNonEmpty(m.Region.ValueString(), os.Getenv("AWS_REGION"), os.Getenv("AWS_DEFAULT_REGION"))
 	signs := m.APIKey.ValueString() == "" && os.Getenv("ANTHROPIC_AWS_API_KEY") == ""
 	derivesURL := firstNonEmpty(m.BaseURL.ValueString(), os.Getenv("ANTHROPIC_AWS_BASE_URL")) == ""
@@ -209,20 +211,7 @@ func resolveAWS(ctx context.Context, data AnthropicProviderModel) (*anthropicaws
 			"Set aws.region or the AWS_REGION environment variable: it selects the gateway endpoint and the SigV4 "+
 				"signing region, and a workspace is reachable only through the region it was created in.")
 	}
-	if diags.HasError() {
-		return nil, diags
-	}
-
-	return &anthropicaws.ClientConfig{
-		APIKey:             m.APIKey.ValueString(),
-		AWSAccessKey:       m.AccessKey.ValueString(),
-		AWSSecretAccessKey: m.SecretKey.ValueString(),
-		AWSSessionToken:    m.SessionToken.ValueString(),
-		AWSProfile:         m.Profile.ValueString(),
-		AWSRegion:          m.Region.ValueString(),
-		WorkspaceID:        workspaceID,
-		BaseURL:            m.BaseURL.ValueString(),
-	}, diags
+	return diags
 }
 
 // newAWSClient builds the single SDK client of a Claude Platform on AWS alias.
