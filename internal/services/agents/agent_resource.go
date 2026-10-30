@@ -94,6 +94,7 @@ type agentToolConfigModel struct {
 	BlockedDomains   types.Set    `tfsdk:"blocked_domains"`
 	MaxContentTokens types.Int64  `tfsdk:"max_content_tokens"`
 	UserLocation     types.Object `tfsdk:"user_location"`
+	URLSources       types.Object `tfsdk:"url_sources"`
 }
 
 // agentMCPToolConfigModel is an `mcp_toolsets[*].configs` entry.
@@ -132,6 +133,7 @@ var agentToolConfigAttrTypes = map[string]attr.Type{
 	"blocked_domains":    types.SetType{ElemType: types.StringType},
 	"max_content_tokens": types.Int64Type,
 	"user_location":      types.ObjectType{AttrTypes: agentUserLocationAttrTypes},
+	"url_sources":        types.ObjectType{AttrTypes: agentURLSourcesAttrTypes},
 }
 
 var agentToolsetAttrTypes = map[string]attr.Type{
@@ -343,7 +345,7 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					"configs": schema.ListNestedAttribute{
 						Optional: true,
 						MarkdownDescription: "Per-tool configuration overrides. The `web_fetch` and `web_search` entries also accept " +
-							"`allowed_domains` or `blocked_domains`, plus `max_content_tokens` (`web_fetch`) or `user_location` (`web_search`); " +
+							"`allowed_domains` or `blocked_domains`, plus `max_content_tokens` and `url_sources` (`web_fetch`) or `user_location` (`web_search`); " +
 							"setting one of these on another tool fails at plan time.",
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
@@ -420,6 +422,7 @@ func (r *AgentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 										},
 									},
 								},
+								"url_sources": urlSourcesSchema(),
 							},
 						},
 					},
@@ -1631,6 +1634,9 @@ func buildAgentToolConfigParams(name string, enabled param.Opt[bool], policyType
 			AllowedDomains:   web.allowedDomains,
 			BlockedDomains:   web.blockedDomains,
 			MaxContentTokens: web.maxContentTokens,
+		}
+		if web.urlSources != nil {
+			cfg.URLSources = *web.urlSources
 		}
 		cfg.PermissionPolicy.OfAlwaysAllow, cfg.PermissionPolicy.OfAlwaysAsk, cfg.PermissionPolicy.OfAuto = permissionPolicyParams(policyType)
 		u.OfWebFetch = cfg
