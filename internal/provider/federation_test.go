@@ -33,7 +33,9 @@ type federationServer struct {
 	mu         sync.Mutex
 	exchanges  []map[string]string
 	authorized []string
-	headers    http.Header
+	// requests holds the headers of every request that was not an
+	// exchange, in order, so a test with two clients can check each.
+	requests []http.Header
 }
 
 func newFederationServer(t *testing.T, expiresIn int) *federationServer {
@@ -57,19 +59,19 @@ func newFederationServer(t *testing.T, expiresIn int) *federationServer {
 			return
 		}
 		fs.authorized = append(fs.authorized, r.Header.Get("Authorization"))
-		fs.headers = r.Header.Clone()
+		fs.requests = append(fs.requests, r.Header.Clone())
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(fs.Close)
 	return fs
 }
 
-// lastHeaders returns the headers of the last request that was not an
-// exchange.
-func (fs *federationServer) lastHeaders() http.Header {
+// requestHeaders returns the headers of every request that was not an
+// exchange, in order.
+func (fs *federationServer) requestHeaders() []http.Header {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	return fs.headers.Clone()
+	return append([]http.Header(nil), fs.requests...)
 }
 
 func (fs *federationServer) snapshot() ([]map[string]string, []string) {

@@ -10,15 +10,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -104,6 +107,7 @@ func federationAttributes(workspaceDescription string) map[string]schema.Attribu
 		},
 		"workspace_id": schema.StringAttribute{
 			Optional:    true,
+			Validators:  []validator.String{stringvalidator.RegexMatches(federationWorkspaceIDPattern, "must be a workspace ID (`wrkspc_` followed by letters and digits) or `default`")},
 			Description: workspaceDescription,
 		},
 		"identity_token": schema.StringAttribute{
@@ -131,6 +135,14 @@ func federationAttributes(workspaceDescription string) map[string]schema.Attribu
 		},
 	}
 }
+
+// federationWorkspaceIDPattern is the shape of the workspace an exchange is
+// scoped to: a workspace ID, or the literal `default` the exchange accepts for
+// the organization's default workspace. Checked at plan time, as for the
+// provider-level workspace_id, so a stray newline fails the plan rather than
+// every exchange, and never reads as a workspace different from the
+// provider-level one it would otherwise match.
+var federationWorkspaceIDPattern = regexp.MustCompile(`^(wrkspc_[0-9A-Za-z]+|default)$`)
 
 // federationSettings is the federation block after environment fallback.
 type federationSettings struct {
@@ -196,11 +208,14 @@ func resolveFederation(ctx context.Context, name string, obj types.Object, works
 		return nil, diags
 	}
 
-	if workspaceID != "" && !m.WorkspaceID.IsNull() && m.WorkspaceID.ValueString() != workspaceID {
+	// An empty block attribute counts as unset, as isSet does in the config
+	// validators, so `workspace_id = var.x` with an empty default conflicts
+	// with nothing. The conflict is reported with the other diagnostics, not
+	// instead of them.
+	if blockWorkspaceID := m.WorkspaceID.ValueString(); workspaceID != "" && blockWorkspaceID != "" && blockWorkspaceID != workspaceID {
 		diags.AddAttributeError(root.AtName("workspace_id"), "Conflicting Workspace Configuration",
 			fmt.Sprintf("%s.workspace_id (%s) and workspace_id (%s) both select the workspace of the standard client. Set one, or the same workspace in both.",
-				name, m.WorkspaceID.ValueString(), workspaceID))
-		return nil, diags
+				name, blockWorkspaceID, workspaceID))
 	}
 	if workspaceID == "" {
 		workspaceID = resolveCredential(m.WorkspaceID, "ANTHROPIC_WORKSPACE_ID")

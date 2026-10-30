@@ -9,6 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/provider"
+	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
@@ -68,8 +73,10 @@ func TestConfigureAPIFederationBacksTheStandardClient(t *testing.T) {
 	if strings.Join(authorized, ",") != strings.Join(want, ",") {
 		t.Errorf("authorization headers = %v, want %v", authorized, want)
 	}
-	if headers := fs.lastHeaders(); headers.Get("X-Api-Key") != "" || headers.Get("anthropic-workspace-id") != "" {
-		t.Errorf("standard client sent x-api-key=%q anthropic-workspace-id=%q, want neither", headers.Get("X-Api-Key"), headers.Get("anthropic-workspace-id"))
+	for i, headers := range fs.requestHeaders() {
+		if headers.Get("X-Api-Key") != "" || headers.Get("anthropic-workspace-id") != "" {
+			t.Errorf("request %d sent x-api-key=%q anthropic-workspace-id=%q, want neither", i+1, headers.Get("X-Api-Key"), headers.Get("anthropic-workspace-id"))
+		}
 	}
 }
 
@@ -113,6 +120,33 @@ func TestConfigureBothFederationBlocks(t *testing.T) {
 	want := []string{"Bearer sk-ant-oat01-minted-1", "Bearer sk-ant-oat01-minted-2", "Bearer sk-ant-oat01-minted-2", "Bearer sk-ant-oat01-minted-2"}
 	if strings.Join(authorized, ",") != strings.Join(want, ",") {
 		t.Errorf("authorization headers = %v, want %v", authorized, want)
+	}
+	// Neither client carries anything but its bearer: no API key, and no
+	// workspace header on a federated token.
+	for i, headers := range fs.requestHeaders() {
+		if headers.Get("X-Api-Key") != "" || headers.Get("anthropic-workspace-id") != "" {
+			t.Errorf("request %d sent x-api-key=%q anthropic-workspace-id=%q, want neither", i+1, headers.Get("X-Api-Key"), headers.Get("anthropic-workspace-id"))
+		}
+	}
+}
+
+// TestConfigureBothFederationBlocksRejectTheSameRule: a rule grants a single
+// scope, so one rule cannot back both clients, and two empty blocks fall
+// back to the same ANTHROPIC_FEDERATION_RULE_ID. Caught at plan time rather
+// than as a 401 on one client's first request.
+func TestConfigureBothFederationBlocksRejectTheSameRule(t *testing.T) {
+	clearCredentialEnv(t)
+	t.Setenv("ANTHROPIC_ORGANIZATION_ID", "00000000-0000-0000-0000-000000000000")
+	t.Setenv("ANTHROPIC_FEDERATION_RULE_ID", "fdrl_shared")
+	t.Setenv("ANTHROPIC_IDENTITY_TOKEN", "jwt")
+
+	resp := configureProvider(t, map[string]tftypes.Value{
+		"federation":     federationValue(t, nil),
+		"api_federation": apiFederationValue(t, nil),
+	})
+	if !resp.Diagnostics.HasError() || resp.Diagnostics.Errors()[0].Summary() != "Conflicting Federation Rules" ||
+		!strings.Contains(resp.Diagnostics.Errors()[0].Detail(), "fdrl_shared") {
+		t.Fatalf("diagnostics = %v, want Conflicting Federation Rules naming fdrl_shared", resp.Diagnostics)
 	}
 }
 
@@ -203,7 +237,7 @@ func TestConfigureAPIFederationIgnoresAPIKeyEnvironment(t *testing.T) {
 	if _, authorized := fs.snapshot(); len(authorized) != 1 || authorized[0] != "Bearer sk-ant-oat01-minted-1" {
 		t.Errorf("authorization headers = %v, want the federated token", authorized)
 	}
-	if v := fs.lastHeaders().Get("X-Api-Key"); v != "" {
+	if v := fs.requestHeaders()[0].Get("X-Api-Key"); v != "" {
 		t.Errorf("standard client also sent x-api-key: %q", v)
 	}
 }
@@ -244,6 +278,14 @@ func TestConfigureAPIFederationWorkspace(t *testing.T) {
 			workspaceID: tftypes.NewValue(tftypes.String, "wrkspc_provider"),
 			block:       tftypes.NewValue(tftypes.String, "wrkspc_block"),
 			wantError:   "Conflicting Workspace Configuration",
+		},
+		{
+			// An empty block attribute (a variable with an empty default)
+			// is unset, as isSet reads it in the config validators.
+			name:        "empty block workspace_id conflicts with nothing",
+			workspaceID: tftypes.NewValue(tftypes.String, "wrkspc_provider"),
+			block:       tftypes.NewValue(tftypes.String, ""),
+			want:        "wrkspc_provider",
 		},
 		{
 			// Configuration over environment, as everywhere else.
@@ -304,8 +346,76 @@ func TestConfigureAPIFederationWorkspace(t *testing.T) {
 			if got := exchanges[0]["workspace_id"]; got != tt.want {
 				t.Errorf("exchange workspace_id = %q, want %q", got, tt.want)
 			}
-			if v := fs.lastHeaders().Get("anthropic-workspace-id"); v != "" {
+			if v := fs.requestHeaders()[0].Get("anthropic-workspace-id"); v != "" {
 				t.Errorf("standard client sent anthropic-workspace-id = %q, want none on a federated token", v)
+			}
+		})
+	}
+}
+
+// TestConfigureAPIFederationWorkspaceConflictIsNotAlone: the workspace
+// conflict is reported with the block's other diagnostics, so a plan does not
+// surface one problem at a time.
+func TestConfigureAPIFederationWorkspaceConflictIsNotAlone(t *testing.T) {
+	clearCredentialEnv(t)
+
+	resp := configureProvider(t, map[string]tftypes.Value{
+		"workspace_id": tftypes.NewValue(tftypes.String, "wrkspc_provider"),
+		"api_federation": apiFederationValue(t, map[string]tftypes.Value{
+			"workspace_id":   tftypes.NewValue(tftypes.String, "wrkspc_block"),
+			"identity_token": tftypes.NewValue(tftypes.String, "jwt"),
+		}),
+	})
+	var summaries []string
+	for _, d := range resp.Diagnostics.Errors() {
+		summaries = append(summaries, d.Summary())
+	}
+	got := strings.Join(summaries, ",")
+	for _, want := range []string{"Conflicting Workspace Configuration", "Missing Federation Organization", "Missing Federation Rule"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("errors = %v, want %s among them", summaries, want)
+		}
+	}
+}
+
+// TestFederationWorkspaceIDValidator: the exchange-time workspace is checked
+// at plan time like the provider-level one, so a trailing newline fails the
+// plan rather than every exchange, and is never read as a workspace different
+// from the provider-level ID it otherwise matches. The literal `default`,
+// which the exchange accepts for the organization's default workspace, is
+// valid.
+func TestFederationWorkspaceIDValidator(t *testing.T) {
+	ctx := context.Background()
+	for _, block := range []string{"federation", "api_federation"} {
+		t.Run(block, func(t *testing.T) {
+			schemaResp := &provider.SchemaResponse{}
+			(&AnthropicProvider{version: "test"}).Schema(ctx, provider.SchemaRequest{}, schemaResp)
+			nested, ok := schemaResp.Schema.Attributes[block].(schema.SingleNestedAttribute)
+			if !ok {
+				t.Fatalf("%s is %T, want schema.SingleNestedAttribute", block, schemaResp.Schema.Attributes[block])
+			}
+			attr, ok := nested.Attributes["workspace_id"].(schema.StringAttribute)
+			if !ok || len(attr.Validators) == 0 {
+				t.Fatalf("%s.workspace_id has no validator", block)
+			}
+
+			for value, valid := range map[string]bool{
+				"wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ":   true,
+				"default":                           true,
+				"wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ\n": false,
+				"01JwQvzr7rXLA5AGx3HKfFUJ":          false,
+				"":                                  false,
+			} {
+				resp := &validator.StringResponse{}
+				for _, v := range attr.Validators {
+					v.ValidateString(ctx, validator.StringRequest{
+						Path:        path.Root(block).AtName("workspace_id"),
+						ConfigValue: types.StringValue(value),
+					}, resp)
+				}
+				if got := !resp.Diagnostics.HasError(); got != valid {
+					t.Errorf("%s.workspace_id %q: valid = %v, want %v (%v)", block, value, got, valid, resp.Diagnostics)
+				}
 			}
 		})
 	}

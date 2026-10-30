@@ -147,14 +147,22 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 	// would fill the same client: configuring both is an error, and the
 	// credential's environment variable gives way to the block.
 	if federation != nil {
-		rejectCredentialBesideFederation(&resp.Diagnostics, "federation", "auth_token", "ANTHROPIC_AUTH_TOKEN",
-			"Conflicting OAuth Credentials", "the org:admin bearer token", data.AuthToken, authToken)
+		oauthFederationCredential.rejectCredentialBeside(&resp.Diagnostics, data.AuthToken, authToken)
 		authToken = ""
 	}
 	if apiFederation != nil {
-		rejectCredentialBesideFederation(&resp.Diagnostics, "api_federation", "api_key", "ANTHROPIC_API_KEY",
-			"Conflicting API Credentials", "the standard client's credential", data.ApiKey, apiKey)
+		apiFederationCredential.rejectCredentialBeside(&resp.Diagnostics, data.ApiKey, apiKey)
 		apiKey = ""
+	}
+	// A rule carries a single scope, so one rule cannot back both clients:
+	// one of them would hold a token of the wrong scope and fail on its
+	// first request. Easy to hit with two empty blocks, since both fall back
+	// to the same ANTHROPIC_FEDERATION_RULE_ID.
+	if federation != nil && apiFederation != nil && federation.options.FederationRuleID == apiFederation.options.FederationRuleID {
+		resp.Diagnostics.AddAttributeError(path.Root("api_federation").AtName("federation_rule_id"), "Conflicting Federation Rules",
+			fmt.Sprintf("federation and api_federation both exchange against rule %s, but a rule grants a single scope: "+
+				"federation needs an org:admin rule and api_federation a workspace:developer or workspace:inference rule. "+
+				"Set a different federation_rule_id in one of them.", apiFederation.options.FederationRuleID))
 	}
 	if resp.Diagnostics.HasError() {
 		return
@@ -208,10 +216,26 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 	resp.ResourceData = pd
 }
 
-// rejectCredentialBesideFederation applies the rule shared by the two
-// federation blocks to the credential a block replaces (auth_token for
-// federation, api_key for api_federation): both would fill the same client,
-// so configuring both is an error, and the credential's environment variable
+// federatedCredential names the credential a federation block replaces, for
+// the diagnostics of rejectCredentialBeside.
+type federatedCredential struct {
+	block, argument, envVar, conflictSummary, what string
+}
+
+var (
+	oauthFederationCredential = federatedCredential{
+		block: "federation", argument: "auth_token", envVar: "ANTHROPIC_AUTH_TOKEN",
+		conflictSummary: "Conflicting OAuth Credentials", what: "the org:admin bearer token",
+	}
+	apiFederationCredential = federatedCredential{
+		block: "api_federation", argument: "api_key", envVar: "ANTHROPIC_API_KEY",
+		conflictSummary: "Conflicting API Credentials", what: "the standard client's credential",
+	}
+)
+
+// rejectCredentialBeside applies the rule shared by the two federation blocks
+// to the credential the block replaces: both would fill the same client, so
+// configuring both is an error, and the credential's environment variable
 // gives way to the block, with a warning.
 //
 // The conflict check reads the configuration, not the resolved string: a
@@ -219,16 +243,16 @@ func (p *AnthropicProvider) Configure(ctx context.Context, req provider.Configur
 // environment does to every other provider argument; the warning is there
 // because the SDKs rank the variable above their own federation, so an
 // operator used to them would expect the reverse.
-func rejectCredentialBesideFederation(diags *diag.Diagnostics, block, argument, envVar, conflictSummary, what string, configured types.String, resolved string) {
+func (c federatedCredential) rejectCredentialBeside(diags *diag.Diagnostics, configured types.String, resolved string) {
 	if !configured.IsNull() {
-		diags.AddAttributeError(path.Root(block), conflictSummary,
-			fmt.Sprintf("%s and %s both supply %s. Configure one.", block, argument, what))
+		diags.AddAttributeError(path.Root(c.block), c.conflictSummary,
+			fmt.Sprintf("%s and %s both supply %s. Configure one.", c.block, c.argument, c.what))
 		return
 	}
 	if resolved != "" {
-		diags.AddAttributeWarning(path.Root(block), envVar+" Ignored",
+		diags.AddAttributeWarning(path.Root(c.block), c.envVar+" Ignored",
 			fmt.Sprintf("%s is set, but the %s block supplies %s, so the variable is not used. Unset it to silence this warning.",
-				envVar, block, what))
+				c.envVar, c.block, c.what))
 	}
 }
 
