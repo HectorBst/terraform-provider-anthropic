@@ -113,17 +113,19 @@ provider "anthropic" {
 
     # One identity token source:
     identity_token_file = "/var/run/secrets/anthropic.com/token"
+    # github_actions = {} # on GitHub Actions, in a job with permissions: id-token: write
     # identity_token_command = ["az", "account", "get-access-token", "--resource", "<app-client-id>", "--query", "accessToken", "-o", "tsv"]
     # identity_token = "eyJ..."
   }
 }
 ```
 
+- `github_actions` requests a token from GitHub Actions' OIDC endpoint on every exchange, with nothing else on the runner (no shell, `curl` or `jq`). GitHub sets the two variables it reads, `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, only in a job with `permissions: id-token: write`; without them the plan fails with a diagnostic that names the permission. `audience` defaults to `https://api.anthropic.com`, the audience a federation rule expects when its `match.audience` is unset; set it to the rule's `match.audience` otherwise: `github_actions = { audience = "..." }`.
 - `identity_token_file` is re-read on every exchange, for tokens a platform rotates on disk. The platform must have rotated the file by the next exchange: if it still holds a token with a `jti` the exchange has already accepted, that exchange fails with `jti_reused`.
 - `identity_token_command` runs a program on every exchange and reads the token from its stdout. Use it for tokens fetched from a CLI or an endpoint. The program is run directly, not through a shell, so a pipe or `$VARIABLE` expansion needs the shell as the program: `["sh", "-c", "..."]`.
 - `identity_token` is a literal and cannot be refreshed.
 
-The command is stopped after 30 seconds. Its stderr is not shown in the error, since a failing CLI may echo the token there (`curl -v`, `az --debug`, `set -x`); it is logged at `TF_LOG=DEBUG`.
+The command, and the `github_actions` request, are stopped after 30 seconds. The command's stderr is not shown in the error, since a failing CLI may echo the token there (`curl -v`, `az --debug`, `set -x`), nor is the body of a failed `github_actions` request; both are logged at `TF_LOG=DEBUG`.
 
 Give the rule a `token_lifetime_seconds` well above 120 (the default, 3600, is fine). The SDK refreshes within the last 120 seconds of an access token's life, so with a shorter lifetime every request refreshes, and runs the identity source, which can hit the identity provider's rate limit on a large plan.
 
@@ -156,7 +158,7 @@ provider "anthropic" {
 
 - **It replaces `api_key`.** Configuring both is an error, and an exported `ANTHROPIC_API_KEY` is ignored with a warning, as `federation` does with `auth_token`.
 - **The token is scoped to one workspace at exchange time**, and the `anthropic-workspace-id` header does not apply to it, so the provider never sends that header on a federated standard client. The workspace is `api_federation.workspace_id`, else the provider-level `workspace_id`, else `ANTHROPIC_WORKSPACE_ID`; the two attributes must name the same workspace when both are set. A rule enabled for a single workspace needs none of them. One workspace per provider alias, as with an identity-linked key.
-- **A rule carries a single scope**, so managing both WIF (`org:admin`) and the workspace's resources from one configuration takes two rules and both blocks: `federation` for the admin endpoints, `api_federation` for everything else; the same rule in both is rejected at plan time. Each block exchanges on its own, so an identity token carrying a `jti` (GitHub Actions, Kubernetes, Entra) must be fetched fresh for each: give both blocks an `identity_token_command`, or distinct files. One file, or `ANTHROPIC_IDENTITY_TOKEN_FILE` filling both blocks, presents the same assertion twice and the second exchange fails with `jti_reused`.
+- **A rule carries a single scope**, so managing both WIF (`org:admin`) and the workspace's resources from one configuration takes two rules and both blocks: `federation` for the admin endpoints, `api_federation` for everything else; the same rule in both is rejected at plan time. Each block exchanges on its own, so an identity token carrying a `jti` (GitHub Actions, Kubernetes, Entra) must be fetched fresh for each: give both blocks `github_actions` or an `identity_token_command`, or distinct files. One file, or `ANTHROPIC_IDENTITY_TOKEN_FILE` filling both blocks, presents the same assertion twice and the second exchange fails with `jti_reused`.
 - The Admin API has no federated counterpart: `admin_api_key` stays a stored key.
 
 Everything said of `federation` applies: the identity token source is re-read or re-run per exchange, the block alone enables it (the environment variables never do), and every attribute must be known at plan time.
@@ -207,12 +209,21 @@ provider "anthropic" {}
 Optional:
 
 - `federation_rule_id` (String) Federation rule (`fdrl_...`) to exchange against. Can also be set via the ANTHROPIC_FEDERATION_RULE_ID environment variable.
-- `identity_token` (String, Sensitive) A literal identity token (JWT). It cannot be refreshed, so applies that outlive it fail; prefer `identity_token_file` or `identity_token_command`. Can also be set via the ANTHROPIC_IDENTITY_TOKEN environment variable.
-- `identity_token_command` (List of String) Command (program and arguments) that prints an identity token on stdout. The program is run directly, not through a shell: for a pipe or `$VARIABLE` expansion, make the shell the program (`["sh", "-c", "..."]`). It runs on every exchange, so short-lived tokens, and tokens with a `jti` claim that the exchange accepts only once, are fetched fresh each time. It is stopped after 30 seconds. Its stderr is not shown in diagnostics, since a failing CLI may echo the token there; it is logged at TF_LOG=DEBUG.
+- `github_actions` (Attributes) Fetch the identity token from GitHub Actions' OIDC endpoint, with no shell, `curl` or `jq` on the runner: one request per exchange to ACTIONS_ID_TOKEN_REQUEST_URL, authenticated with ACTIONS_ID_TOKEN_REQUEST_TOKEN, so the single-use token is never presented twice. GitHub sets both variables only in a job with `permissions: id-token: write`; without them the plan fails. `github_actions = {}` requests the default audience. The request is stopped after 30 seconds. (see [below for nested schema](#nestedatt--api_federation--github_actions))
+- `identity_token` (String, Sensitive) A literal identity token (JWT). It cannot be refreshed, so applies that outlive it fail; prefer `github_actions`, `identity_token_file` or `identity_token_command`. Can also be set via the ANTHROPIC_IDENTITY_TOKEN environment variable.
+- `identity_token_command` (List of String) Command (program and arguments) that prints an identity token on stdout. The program is run directly, not through a shell: for a pipe or `$VARIABLE` expansion, make the shell the program (`["sh", "-c", "..."]`). It runs on every exchange, so short-lived tokens, and tokens with a `jti` claim that the exchange accepts only once, are fetched fresh each time. It is stopped after 30 seconds. Its stderr is not shown in diagnostics, since a failing CLI may echo the token there; it is logged at TF_LOG=DEBUG. On GitHub Actions, `github_actions` needs no command.
 - `identity_token_file` (String) Path to a file holding the identity token, re-read on every exchange so a rotating file (such as a Kubernetes projected token) stays current. The file must have been rotated by the next exchange if its token carries a `jti`, which the exchange accepts only once. Can also be set via the ANTHROPIC_IDENTITY_TOKEN_FILE environment variable.
 - `organization_id` (String) UUID of the Anthropic organization. Can also be set via the ANTHROPIC_ORGANIZATION_ID environment variable.
 - `service_account_id` (String) Service account (`svac_...`) the rule targets; the exchange fails if the rule targets another. Can also be set via the ANTHROPIC_SERVICE_ACCOUNT_ID environment variable.
 - `workspace_id` (String) Workspace (`wrkspc_...`) to scope the token to at exchange time. Required only when the rule is enabled for more than one workspace. Falls back to the provider-level `workspace_id`, then to the ANTHROPIC_WORKSPACE_ID environment variable, which the SDKs' own federation reads the same way.
+
+<a id="nestedatt--api_federation--github_actions"></a>
+### Nested Schema for `api_federation.github_actions`
+
+Optional:
+
+- `audience` (String) Audience (`aud` claim) to request. Defaults to `https://api.anthropic.com`, the audience a federation rule expects when its `match.audience` is unset; set it to the rule's `match.audience` otherwise.
+
 
 
 <a id="nestedatt--federation"></a>
@@ -221,9 +232,17 @@ Optional:
 Optional:
 
 - `federation_rule_id` (String) Federation rule (`fdrl_...`) to exchange against. Can also be set via the ANTHROPIC_FEDERATION_RULE_ID environment variable.
-- `identity_token` (String, Sensitive) A literal identity token (JWT). It cannot be refreshed, so applies that outlive it fail; prefer `identity_token_file` or `identity_token_command`. Can also be set via the ANTHROPIC_IDENTITY_TOKEN environment variable.
-- `identity_token_command` (List of String) Command (program and arguments) that prints an identity token on stdout. The program is run directly, not through a shell: for a pipe or `$VARIABLE` expansion, make the shell the program (`["sh", "-c", "..."]`). It runs on every exchange, so short-lived tokens, and tokens with a `jti` claim that the exchange accepts only once, are fetched fresh each time. It is stopped after 30 seconds. Its stderr is not shown in diagnostics, since a failing CLI may echo the token there; it is logged at TF_LOG=DEBUG.
+- `github_actions` (Attributes) Fetch the identity token from GitHub Actions' OIDC endpoint, with no shell, `curl` or `jq` on the runner: one request per exchange to ACTIONS_ID_TOKEN_REQUEST_URL, authenticated with ACTIONS_ID_TOKEN_REQUEST_TOKEN, so the single-use token is never presented twice. GitHub sets both variables only in a job with `permissions: id-token: write`; without them the plan fails. `github_actions = {}` requests the default audience. The request is stopped after 30 seconds. (see [below for nested schema](#nestedatt--federation--github_actions))
+- `identity_token` (String, Sensitive) A literal identity token (JWT). It cannot be refreshed, so applies that outlive it fail; prefer `github_actions`, `identity_token_file` or `identity_token_command`. Can also be set via the ANTHROPIC_IDENTITY_TOKEN environment variable.
+- `identity_token_command` (List of String) Command (program and arguments) that prints an identity token on stdout. The program is run directly, not through a shell: for a pipe or `$VARIABLE` expansion, make the shell the program (`["sh", "-c", "..."]`). It runs on every exchange, so short-lived tokens, and tokens with a `jti` claim that the exchange accepts only once, are fetched fresh each time. It is stopped after 30 seconds. Its stderr is not shown in diagnostics, since a failing CLI may echo the token there; it is logged at TF_LOG=DEBUG. On GitHub Actions, `github_actions` needs no command.
 - `identity_token_file` (String) Path to a file holding the identity token, re-read on every exchange so a rotating file (such as a Kubernetes projected token) stays current. The file must have been rotated by the next exchange if its token carries a `jti`, which the exchange accepts only once. Can also be set via the ANTHROPIC_IDENTITY_TOKEN_FILE environment variable.
 - `organization_id` (String) UUID of the Anthropic organization. Can also be set via the ANTHROPIC_ORGANIZATION_ID environment variable.
 - `service_account_id` (String) Service account (`svac_...`) the rule targets; the exchange fails if the rule targets another. Can also be set via the ANTHROPIC_SERVICE_ACCOUNT_ID environment variable.
 - `workspace_id` (String) Workspace (`wrkspc_...`) to scope the token to at exchange time. Required only when the rule is enabled for more than one workspace. Can also be set via the ANTHROPIC_WORKSPACE_ID environment variable, which the SDKs' own federation reads the same way.
+
+<a id="nestedatt--federation--github_actions"></a>
+### Nested Schema for `federation.github_actions`
+
+Optional:
+
+- `audience` (String) Audience (`aud` claim) to request. Defaults to `https://api.anthropic.com`, the audience a federation rule expects when its `match.audience` is unset; set it to the rule's `match.audience` otherwise.

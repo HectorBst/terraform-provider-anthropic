@@ -420,6 +420,8 @@ func TestConfigureFederationRejectsUnknownAttributes(t *testing.T) {
 		{"organization_id", "organization_id", unknown},
 		{"command list", "identity_token_command", tftypes.NewValue(listType, tftypes.UnknownValue)},
 		{"command element", "identity_token_command", tftypes.NewValue(listType, []tftypes.Value{unknown})},
+		{"github_actions", "github_actions", tftypes.NewValue(githubActionsValue(t, nil).Type(), tftypes.UnknownValue)},
+		{"github_actions audience", "github_actions", githubActionsValue(t, map[string]tftypes.Value{"audience": unknown})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.label, func(t *testing.T) {

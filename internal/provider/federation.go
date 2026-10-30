@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
@@ -49,6 +50,7 @@ type federationModel struct {
 	IdentityToken        types.String `tfsdk:"identity_token"`
 	IdentityTokenFile    types.String `tfsdk:"identity_token_file"`
 	IdentityTokenCommand types.List   `tfsdk:"identity_token_command"`
+	GitHubActions        types.Object `tfsdk:"github_actions"`
 }
 
 func federationSchema() schema.SingleNestedAttribute {
@@ -114,7 +116,7 @@ func federationAttributes(workspaceDescription string) map[string]schema.Attribu
 			Optional:  true,
 			Sensitive: true,
 			Description: "A literal identity token (JWT). It cannot be refreshed, so applies that outlive it fail; prefer " +
-				"`identity_token_file` or `identity_token_command`. Can also be set via the ANTHROPIC_IDENTITY_TOKEN environment variable.",
+				"`github_actions`, `identity_token_file` or `identity_token_command`. Can also be set via the ANTHROPIC_IDENTITY_TOKEN environment variable.",
 		},
 		"identity_token_file": schema.StringAttribute{
 			Optional: true,
@@ -131,8 +133,9 @@ func federationAttributes(workspaceDescription string) map[string]schema.Attribu
 				"(`[\"sh\", \"-c\", \"...\"]`). It runs on every exchange, so short-lived tokens, and tokens with a `jti` " +
 				"claim that the exchange accepts only once, are fetched fresh each time. It is stopped after 30 seconds. " +
 				"Its stderr is not shown in diagnostics, since a failing CLI may echo the token there; it is logged " +
-				"at TF_LOG=DEBUG.",
+				"at TF_LOG=DEBUG. On GitHub Actions, `github_actions` needs no command.",
 		},
+		"github_actions": githubActionsSchema(),
 	}
 }
 
@@ -198,6 +201,7 @@ func resolveFederation(ctx context.Context, name string, obj types.Object, works
 		{"identity_token", m.IdentityToken},
 		{"identity_token_file", m.IdentityTokenFile},
 		{"identity_token_command", m.IdentityTokenCommand},
+		{"github_actions", m.GitHubActions},
 	} {
 		if containsUnknown(a.value) {
 			diags.AddAttributeError(root.AtName(a.name), "Unknown Federation Configuration",
@@ -266,15 +270,19 @@ func identityTokenSource(ctx context.Context, m federationModel) (option.Identit
 		}
 	}
 	file, literal := m.IdentityTokenFile.ValueString(), m.IdentityToken.ValueString()
+	audience, githubActions, err := githubActionsAudience(ctx, m.GitHubActions)
+	if err != nil {
+		return nil, err
+	}
 
 	configured := 0
-	for _, set := range []bool{argv != nil, file != "", literal != ""} {
+	for _, set := range []bool{argv != nil, file != "", literal != "", githubActions} {
 		if set {
 			configured++
 		}
 	}
 	if configured > 1 {
-		return nil, errors.New("set at most one of identity_token, identity_token_file and identity_token_command")
+		return nil, errors.New("set at most one of identity_token, identity_token_file, identity_token_command and github_actions")
 	}
 	if configured == 0 {
 		// Same order as the SDKs below: the file, which can rotate, before the literal.
@@ -282,6 +290,8 @@ func identityTokenSource(ctx context.Context, m federationModel) (option.Identit
 	}
 
 	switch {
+	case githubActions:
+		return githubActionsIdentityTokenFromEnvironment(audience)
 	case argv != nil:
 		return commandIdentityToken(argv, identityTokenCommandTimeout), nil
 	case file != "":
@@ -289,17 +299,21 @@ func identityTokenSource(ctx context.Context, m federationModel) (option.Identit
 	case literal != "":
 		return staticIdentityToken(literal), nil
 	}
-	return nil, errors.New("no identity token: set identity_token_file, identity_token_command or identity_token, " +
+	return nil, errors.New("no identity token: set github_actions, identity_token_file, identity_token_command or identity_token, " +
 		"or the ANTHROPIC_IDENTITY_TOKEN_FILE or ANTHROPIC_IDENTITY_TOKEN environment variable")
 }
 
-// containsUnknown reports whether v, or any element of a list v, is unknown.
+// containsUnknown reports whether v, or any element of a list v or attribute
+// of an object v, is unknown.
 func containsUnknown(v attr.Value) bool {
 	if v.IsUnknown() {
 		return true
 	}
-	if l, ok := v.(types.List); ok {
-		return slices.ContainsFunc(l.Elements(), func(e attr.Value) bool { return e.IsUnknown() })
+	switch v := v.(type) {
+	case types.List:
+		return slices.ContainsFunc(v.Elements(), containsUnknown)
+	case types.Object:
+		return slices.ContainsFunc(slices.Collect(maps.Values(v.Attributes())), containsUnknown)
 	}
 	return false
 }
