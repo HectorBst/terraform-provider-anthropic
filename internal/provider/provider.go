@@ -24,6 +24,7 @@ import (
 	provretry "github.com/ippontech/terraform-provider-anthropic/internal/retry"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/agents"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/apikeys"
+	"github.com/ippontech/terraform-provider-anthropic/internal/services/compliance"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/deployments"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/environments"
 	"github.com/ippontech/terraform-provider-anthropic/internal/services/externalkeys"
@@ -292,6 +293,7 @@ func (p *AnthropicProvider) Resources(ctx context.Context) []func() resource.Res
 	return []func() resource.Resource{
 		agents.NewAgentResource,
 		apikeys.NewAPIKeyResource,
+		compliance.NewComplianceSettingsResource,
 		deployments.NewDeploymentResource,
 		environments.NewEnvironmentResource,
 		externalkeys.NewExternalKeyResource,
