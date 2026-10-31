@@ -100,11 +100,19 @@ that signs the checksums the Terraform Registry verifies. A malicious patch rele
 otherwise be merged by GitHub auto-merge three days after publication, with no maintainer decision, and
 run with those credentials on the next push or tag.
 
+The actions of `testacc.yml` are in the same position. Its two jobs run in the `acctest` environment
+with the acceptance-test API keys in their environment, and every push to `main` starts them, the merge
+of a Renovate PR included: an automerged action update would run with those keys as soon as it lands.
+
 A `matchFileNames` rule therefore moves these updates (GoReleaser, the semantic-release packages and
-their lockfile, and the actions used by the two workflows) into their own `release tooling` group with `automerge: false`. A
-maintainer reviews the release notes and the diff of each one before merging. The rule matches by file,
-not by package, so the same action used in other workflows (`actions/checkout`, say) keeps its
-automerged `GitHub Actions` group there; only its release-workflow occurrence waits for review.
+their lockfile, and the actions used by the three workflows) into their own `release tooling` group with
+`automerge: false`. A maintainer reviews the release notes and the diff of each one before merging. The
+rule matches by file, not by package, so the same action used in other workflows (`actions/checkout`,
+say) keeps its automerged `GitHub Actions` group there; only its occurrences in these three workflows
+wait for review. `testacc.yml` uses the same actions as the release workflows, `hashicorp/setup-terraform`
+aside, so a bump of one of them comes in the same reviewed PR for all three files.
+
+A new workflow whose jobs read an environment secret joins the rule's `matchFileNames` list.
 
 ## Go version
 

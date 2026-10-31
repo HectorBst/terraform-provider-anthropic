@@ -78,11 +78,12 @@
       "automerge": false
     },
     {
-      "description": "Release tooling runs next to the release credentials: the semantic-release App token, which bypasses the main ruleset, and the GPG key that signs the Registry checksums. Its updates get their own group and are never automerged, whatever the update type, so a maintainer reviews each one. Matched by file, so it covers GoReleaser (custom.regex), the semantic-release packages and their lockfile (npm) and the actions those two workflows use (github-actions); the same action in other workflows keeps its usual automerged group. The commit type is forced to chore: the npm manager gives the semantic-release packages the dependencies depType, which config:recommended would title fix(deps), and a fix title would publish a provider patch release for a tooling bump.",
+      "description": "Release tooling runs next to the release credentials: the semantic-release App token, which bypasses the main ruleset, and the GPG key that signs the Registry checksums. The actions of testacc.yml run next to the acctest keys, on every push to main. Their updates get their own group and are never automerged, whatever the update type, so a maintainer reviews each one. Matched by file, so it covers GoReleaser (custom.regex), the semantic-release packages and their lockfile (npm) and the actions those three workflows use (github-actions); the same action in other workflows keeps its usual automerged group. A new workflow whose jobs read an environment secret joins this list. The commit type is forced to chore: the npm manager gives the semantic-release packages the dependencies depType, which config:recommended would title fix(deps), and a fix title would publish a provider patch release for a tooling bump.",
       "matchFileNames": [
         ".github/workflows/goreleaser-release.yml",
         ".github/workflows/semantic-release.yml",
-        ".github/semantic-release/package.json"
+        ".github/semantic-release/package.json",
+        ".github/workflows/testacc.yml"
       ],
       "groupName": "release tooling",
       "groupSlug": "release-tooling",

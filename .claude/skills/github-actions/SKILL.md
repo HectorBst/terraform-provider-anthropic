@@ -123,6 +123,7 @@ A job that signs artifacts or writes to `main` holds credentials that every user
 4. **Installs come from a committed lockfile, without scripts.** `npm ci --ignore-scripts` from `.github/semantic-release/package-lock.json` (also enforced by its `.npmrc`), never `npm install` with inline versions: every transitive package would otherwise be resolved at release time and could run code next to the credentials.
 5. **Credentials enter the job after the install.** `actions/checkout` sets `persist-credentials: false`, the App token is minted after `npm ci` and passed only to the step that publishes, and the job token keeps `contents: read`.
 6. **Release tooling updates get a human review.** In `renovate.json`, the `release tooling` group (matched by file: both release workflows and `.github/semantic-release/package.json`) keeps `automerge: false` whatever the update type. Do not add these files to an automerged group.
+   The group also matches `testacc.yml`, whose jobs hold the `acctest` keys. Add to it any new workflow whose jobs read an environment secret.
 
 ```yaml
 jobs:
