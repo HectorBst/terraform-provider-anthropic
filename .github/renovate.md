@@ -112,7 +112,8 @@ say) keeps its automerged `GitHub Actions` group there; only its occurrences in 
 wait for review. `testacc.yml` uses the same actions as the release workflows, `hashicorp/setup-terraform`
 aside, so a bump of one of them comes in the same reviewed PR for all three files.
 
-A new workflow whose jobs read an environment secret joins the rule's `matchFileNames` list.
+A new workflow whose jobs read any secret other than `GITHUB_TOKEN`, or run in a protected environment,
+joins the rule's `matchFileNames` list.
 
 ## Go version
 
