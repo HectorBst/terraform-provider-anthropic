@@ -45,12 +45,13 @@
       "groupSlug": "go-deps"
     },
     {
-      "description": "tools/go.mod (the generators behind make generate) gets its own group, so its updates keep automerging while those of the root go.mod wait for a maintainer (rule after the automerge one): Renovate automerges a grouped branch only when every update in it is automerged. No job that holds a secret builds this module.",
+      "description": "tools/go.mod (the generators behind make generate) gets its own group, so its updates keep automerging while those of the root go.mod wait for a maintainer (rule after the automerge one): Renovate automerges a grouped branch only when every update in it is automerged. No job that holds a secret builds this module. Its commits are typed chore: nothing in it is linked into the binary, and the require depType would otherwise get fix from config:recommended and publish a provider release for each bump.",
       "matchManagers": ["gomod"],
       "matchFileNames": ["tools/go.mod"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "Go tools module",
-      "groupSlug": "go-tools"
+      "groupSlug": "go-tools",
+      "semanticCommitType": "chore"
     },
     {
       "description": "Go toolchain and indirect module updates change the shipped binary like direct ones, so they get the fix type and semantic-release publishes a patch release with them. The :semanticPrefixFixDepsChoreOthers preset of config:recommended gives fix to the require depType only, chore (no release) to the rest. Root go.mod only: tools/go.mod feeds make generate and is not linked into the binary.",

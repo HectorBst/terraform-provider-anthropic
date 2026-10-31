@@ -132,7 +132,8 @@ before the new code runs next to the keys, instead of after.
 
 `tools/go.mod` (the generators behind `make generate`) has its own `Go tools module` group and keeps
 automerging: no job that holds a secret builds it. It cannot share the `Go dependencies` group, because
-Renovate automerges a grouped branch only when every update in it is automerged.
+Renovate automerges a grouped branch only when every update in it is automerged. Its updates are
+committed as `chore(deps)`: nothing in that module is linked into the binary, so they publish no release.
 
 ## Go version
 
@@ -143,7 +144,7 @@ Renovate automerges a grouped branch only when every update in it is automerged.
 | `go 1.26.2` | Language version: the oldest Go that can build the module, and the `GODEBUG` defaults compiled into the binary | Never proposes an update, by design ([gomod manager docs](https://docs.renovatebot.com/modules/manager/gomod/#updating-of-go-mod-and-toolchain-directives)). Raise it by hand, deliberately |
 | `toolchain go1.26.10` | The Go release CI tests with and releases are built with: `actions/setup-go` reads it before the `go` directive | Proposes updates by default, inside the `Go dependencies` group. `osvVulnerabilityAlerts` matches it against the standard-library advisories; it skips the `go` directive |
 
-Updates of the `toolchain` line (dependency type `toolchain`), and of the modules marked `// indirect`, are committed as `fix(deps)`, like direct modules, so semantic-release publishes a patch release that carries them. The `:semanticPrefixFixDepsChoreOthers` preset of `config:recommended` would type them `chore(deps)`, which publishes nothing ([preset](https://docs.renovatebot.com/presets-default/#semanticprefixfixdepschoreothers), [dependency types](https://docs.renovatebot.com/modules/manager/gomod/#dependency-types)). The `go` line (dependency type `golang`) keeps the preset's `chore(deps)`; Renovate does not propose updates to it anyway (see the table above). The rule matches the root `go.mod` only (`matchFileNames`): `tools/go.mod` feeds `make generate` and is not linked into the binary, so its indirect updates stay `chore(deps)`.
+Updates of the `toolchain` line (dependency type `toolchain`), and of the modules marked `// indirect`, are committed as `fix(deps)`, like direct modules, so semantic-release publishes a patch release that carries them. The `:semanticPrefixFixDepsChoreOthers` preset of `config:recommended` would type them `chore(deps)`, which publishes nothing ([preset](https://docs.renovatebot.com/presets-default/#semanticprefixfixdepschoreothers), [dependency types](https://docs.renovatebot.com/modules/manager/gomod/#dependency-types)). The `go` line (dependency type `golang`) keeps the preset's `chore(deps)`; Renovate does not propose updates to it anyway (see the table above). The rule matches the root `go.mod` only (`matchFileNames`): `tools/go.mod` feeds `make generate` and is not linked into the binary, so its updates are `chore(deps)` (see [Go modules](#go-modules)).
 
 The `toolchain` line is what keeps the standard-library vulnerabilities out of the released binaries, so
 leave it in place: `go mod tidy` removes it as soon as it is not newer than the `go` directive.
