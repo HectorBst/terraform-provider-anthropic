@@ -45,6 +45,14 @@
       "groupSlug": "go-deps"
     },
     {
+      "description": "tools/go.mod (the generators behind make generate) gets its own group, so its updates keep automerging while those of the root go.mod wait for a maintainer (rule after the automerge one): Renovate automerges a grouped branch only when every update in it is automerged. No job that holds a secret builds this module.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["tools/go.mod"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "Go tools module",
+      "groupSlug": "go-tools"
+    },
+    {
       "description": "Go toolchain and indirect module updates change the shipped binary like direct ones, so they get the fix type and semantic-release publishes a patch release with them. The :semanticPrefixFixDepsChoreOthers preset of config:recommended gives fix to the require depType only, chore (no release) to the rest. Root go.mod only: tools/go.mod feeds make generate and is not linked into the binary.",
       "matchManagers": ["gomod"],
       "matchFileNames": ["go.mod"],
@@ -70,6 +78,12 @@
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true,
       "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Root go.mod updates (direct and indirect modules, and the Go toolchain) are compiled into the acceptance tests, which run with the acctest keys on the push to main that the merge makes (make testacc, make terraform-test). Never automerged, whatever the update type, so a maintainer decides on each one before that run.",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["go.mod"],
+      "automerge": false
     },
     {
       "description": "tflint is installed from a pinned release zip whose sha256 is hardcoded next to the version (security.yml); Renovate can bump the version but not the hash, so its PR always fails the tflint job until TFLINT_SHA256 is updated by hand. Never automerge it (#241 was merged with the job red).",

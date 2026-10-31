@@ -34,7 +34,7 @@ shows its recent runs and their logs.
 | `postUpdateOptions` | `gomodTidy`: Renovate runs `go mod tidy` after bumping a Go module, so the `go.sum` entries of the transitive dependencies the bump pulls in are written too. Without it a bump of a module with new requirements (the `[SECURITY]` PRs on `tools/go.mod` of 2026-10, #501 to #505) leaves a `go.sum` that `go` rejects with `missing go.sum entry`, and every job that builds the module fails ([docs](https://docs.renovatebot.com/configuration-options/#postupdateoptions)). `go mod tidy` would also drop the root `toolchain` line if it were not newer than the `go` line (see [Go version](#go-version)), so keep it newer |
 | `enabledManagers` | `github-actions`, `gomod`, `mise`, `pre-commit`, `custom.regex`, `npm` |
 | `customManagers` | Two regex managers, see [Custom managers](#custom-managers) below |
-| `packageRules` | One grouped PR per manager, automerge for `minor` / `patch` / `pin` / `digest` updates after a 3-day `minimumReleaseAge` cooldown, except release tooling (see [Release tooling](#release-tooling)), plus a version hold on the Anthropic Go SDK (see [Version holds](#version-holds)) |
+| `packageRules` | One grouped PR per manager, automerge for `minor` / `patch` / `pin` / `digest` updates after a 3-day `minimumReleaseAge` cooldown, except release tooling and the root `go.mod` (see [Release tooling](#release-tooling) and [Go modules](#go-modules)), plus a version hold on the Anthropic Go SDK (see [Version holds](#version-holds)) |
 
 Two of these entries are less obvious than they look:
 
@@ -112,8 +112,27 @@ say) keeps its automerged `GitHub Actions` group there; only its occurrences in 
 wait for review. `testacc.yml` uses the same actions as the release workflows, `hashicorp/setup-terraform`
 aside, so a bump of one of them comes in the same reviewed PR for all three files.
 
+`testacc.yml` also pins the Terraform CLI that `hashicorp/setup-terraform` installs (`terraform_version`).
+The action's default is `latest`, which would run whatever release is newest next to the keys, with no
+decision at all. The `github-actions` manager tracks that input as the `terraform` dependency, and the
+same rule puts its updates in the reviewed group.
+
 A new workflow whose jobs read any secret other than `GITHUB_TOKEN`, or run in a protected environment,
 joins the rule's `matchFileNames` list.
+
+## Go modules
+
+The root `go.mod` is compiled into the acceptance tests: `make testacc` runs `go test ./...` and
+`make terraform-test` builds the provider, both with the acceptance-test keys in their environment, on
+the push to `main` that merges an update. Its updates (direct and indirect modules, and the `toolchain`
+line) are therefore never automerged, whatever the update type. They still come grouped in the
+`Go dependencies` PR, which a maintainer reviews and merges. Each of them is a `fix(deps)` commit that
+publishes a release, whose signing a maintainer approves anyway (`RELEASE.md`): the review takes place
+before the new code runs next to the keys, instead of after.
+
+`tools/go.mod` (the generators behind `make generate`) has its own `Go tools module` group and keeps
+automerging: no job that holds a secret builds it. It cannot share the `Go dependencies` group, because
+Renovate automerges a grouped branch only when every update in it is automerged.
 
 ## Go version
 
@@ -131,8 +150,8 @@ leave it in place: `go mod tidy` removes it as soon as it is not newer than the 
 
 Expect Renovate to propose the latest Go release for the toolchain, a minor update when a new Go minor is
 out. golangci-lint refuses to analyse a module whose toolchain is a newer Go minor than the one it was
-built with, so such a PR stays red on the `lint` job, and is not automerged, until the golangci-lint used
-by CI is built with that Go.
+built with, so such a PR stays red on the `lint` job until the golangci-lint used by CI is built with
+that Go.
 
 ## Version holds
 
@@ -142,19 +161,18 @@ One dependency is deliberately capped rather than tracked to latest:
 |---|---|---|
 | `github.com/anthropics/anthropic-sdk-go` | `<1.68.0` | v1.68.0 renames skill fields (`display_title` -> `display_name`, `latest_version` -> `latest_version_id`) and drops `directory` / `version` from the skill-version response, but the deployed API still returns the old names. Tracked in [#192](https://github.com/ippontech/terraform-provider-anthropic/issues/192) |
 
-The cap matters because of the automerge policy above: v1.67.0 -> v1.68.0 is a **minor** update, so it
-would be grouped into the `Go dependencies` PR and automerged after three days. Guidance to "close the
-Renovate PR" would never get a chance to apply. Today the only thing preventing that is accidental — the
-provider does not compile against v1.68.0 (11 errors in `internal/services/skills`), so CI goes red and
-GitHub's auto-merge is blocked. That is a lucky side effect, not a policy, and it would not hold for a
-release that changes behaviour without breaking the build.
+The cap matters because v1.67.0 -> v1.68.0 is a **minor** update: without it, it would come in the
+`Go dependencies` PR with every other root `go.mod` update, and holding it back would hold the whole
+group. The provider happens not to compile against v1.68.0 (11 errors in `internal/services/skills`), so
+CI would go red, but that is a side effect, not a policy, and it would not hold for a release that
+changes behaviour without breaking the build.
 
 Three consequences worth knowing:
 
 - `allowedVersions` filters the version out entirely, so the SDK will keep appearing **up to date** on
   the Dependency Dashboard. #192 is the reminder, not the dashboard.
-- Patch releases within `1.67.x` are still allowed and still automerge, matching the policy for every
-  other Go dependency.
+- Patch releases within `1.67.x` are still allowed and come in the `Go dependencies` PR, reviewed like
+  every other root `go.mod` update.
 - An `osvVulnerabilityAlerts` PR brings its own `allowedVersions` (the fixed versions), which Renovate
   appends after `packageRules` and which replaces the cap. Two more rules keep the cap for those PRs
   (`allowedVersions` and `matchUpdateTypes` cannot share a rule): one disables the SDK's `minor` and

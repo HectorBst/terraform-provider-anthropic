@@ -40,6 +40,10 @@ jobs:
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
+          # Pinned instead of the action's default, `latest`: the CLI runs next to the keys. Renovate's
+          # github-actions manager tracks this input, in the reviewed `release tooling` group
+          # (.github/renovate.md, "Release tooling").
+          terraform_version: 1.17.1
           terraform_wrapper: false
 
       - name: Run acceptance tests
@@ -81,6 +85,10 @@ jobs:
 
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
+          # Pinned instead of the action's default, `latest`: the CLI runs next to the keys. Renovate's
+          # github-actions manager tracks this input, in the reviewed `release tooling` group
+          # (.github/renovate.md, "Release tooling").
+          terraform_version: 1.17.1
           terraform_wrapper: false
 
       - name: Run Terraform tests
